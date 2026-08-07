@@ -4,8 +4,8 @@
 export abstract class Entity {
     constructor(
         public health: number,
-        public readonly reward: number,
-    ) {}
+        public reward: number,
+    ) { }
 
     public takeDamage(amount: number): boolean {
         this.health -= amount;

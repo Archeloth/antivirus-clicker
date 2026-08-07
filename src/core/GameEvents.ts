@@ -1,5 +1,6 @@
 import type { Cell } from "./Cell";
 import type { Entity } from "../entities/Entity";
+import type { GamePhase } from "./GamePhase";
 
 export type GameEvents = {
     "cellChanged": Cell;
@@ -11,5 +12,16 @@ export type GameEvents = {
         cell: Cell;
         entity: Entity;
     };
+    "entityDamaged": {
+        cell: Cell;
+        entity: Entity;
+    };
     "creditsChanged": number;
+    "damageChanged": number;
+    "levelStarted": number;
+    "levelCompleted": number;
+    "phaseChanged": GamePhase;
+    "timerChanged": number;
+    "selectionChanged": undefined;
+    "tickIntervalChanged": number;
 };

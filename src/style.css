@@ -58,6 +58,27 @@ body {
   align-items: center;
 }
 
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.credits,
+.level,
+.damage,
+.timer,
+.tick-rate {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.timer {
+  font-size: 1.2rem;
+  color: var(--accent);
+}
+
 .grid {
   display: grid;
   gap: 10px;
@@ -75,9 +96,112 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+
+  &::after {
+    content: var(--graphic, "");
+    font-size: 1.5rem;
+    line-height: 1;
+    pointer-events: none;
+  }
 
   &:hover {
     transform: scale(1.05);
     box-shadow: 0 0 10px lime;
+  }
+
+  &.selected {
+    border: 2px solid lime;
+    box-shadow: 0 0 10px lime, inset 0 0 10px rgba(0, 255, 0, 0.2);
+  }
+
+  &.shake {
+    animation: shake 0.3s;
+  }
+}
+
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  20% {
+    transform: translateX(-4px);
+  }
+
+  40% {
+    transform: translateX(4px);
+  }
+
+  60% {
+    transform: translateX(-4px);
+  }
+
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.shop {
+  display: none;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  min-width: 300px;
+}
+
+.upgrade-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.upgrade {
+  padding: 8px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  cursor: pointer;
+  font-size: 0.9rem;
+
+  &:hover:not(:disabled) {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.upgrade-description {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.upgrade-cost {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.start-next-level {
+  margin-top: 16px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+
+  &:hover {
+    filter: brightness(1.1);
   }
 }

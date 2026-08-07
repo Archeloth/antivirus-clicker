@@ -11,11 +11,11 @@
 
 # Phase 2 - Gameplay
 
-- [ ] Spawn one virus
-- [ ] Destroy a virus on click
-- [ ] Award credits
-- [ ] Add a basic shop
-- [ ] Implement one upgrade
+- [x] Spawn one virus
+- [x] Destroy a virus on click
+- [x] Award credits
+- [x] Add a basic shop
+- [x] Implement one upgrade
 
 # Phase 3 - Polish
 

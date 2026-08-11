@@ -24,4 +24,9 @@ export type GameEvents = {
     "timerChanged": number;
     "selectionChanged": undefined;
     "tickIntervalChanged": number;
+    "gameWon": undefined;
+    "gameLost": undefined;
+    "bossHpChanged": number;
+    "hpChanged": number;
+    "abilityUsed": string;
 };

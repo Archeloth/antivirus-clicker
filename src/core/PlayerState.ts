@@ -5,6 +5,14 @@ export class PlayerState {
     private securityLevel = 1;
     private damage = 20;
     private tickInterval = 30;
+    private creditBonus = 0;
+    private damageMultiplier = 1;
+    private chainChance = 0;
+    private upgradeLevels = new Map<string, number>();
+    private hp = 1000;
+    private maxHp = 1000;
+    private overdriveTimer = 0;
+    private firewallTimer = 0;
 
     public getCredits(): number {
         return this.credits;
@@ -37,12 +45,33 @@ export class PlayerState {
     }
 
     public getDamageNumber(): number {
-        return this.damage;
+        return Math.round(this.damage * this.damageMultiplier);
     }
 
     public changeDamageNumber(amount: number): void {
         this.damage = this.damage + amount;
-        eventBus.emit("damageChanged", this.damage);
+        eventBus.emit("damageChanged", this.getDamageNumber());
+    }
+
+    public changeDamageMultiplier(amount: number): void {
+        this.damageMultiplier += amount;
+        eventBus.emit("damageChanged", this.getDamageNumber());
+    }
+
+    public getCreditBonus(): number {
+        return this.creditBonus;
+    }
+
+    public changeCreditBonus(amount: number): void {
+        this.creditBonus += amount;
+    }
+
+    public getChainChance(): number {
+        return this.chainChance;
+    }
+
+    public changeChainChance(amount: number): void {
+        this.chainChance += amount;
     }
 
     public getTickInterval(): number {
@@ -52,5 +81,88 @@ export class PlayerState {
     public reduceTickInterval(amount: number): void {
         this.tickInterval = Math.max(1, this.tickInterval - amount);
         eventBus.emit("tickIntervalChanged", this.tickInterval);
+    }
+
+    public getUpgradeLevel(id: string): number {
+        return this.upgradeLevels.get(id) ?? 0;
+    }
+
+    public setUpgradeLevel(id: string, level: number): void {
+        this.upgradeLevels.set(id, level);
+    }
+
+    public getUpgradeLevels(): Map<string, number> {
+        return this.upgradeLevels;
+    }
+
+    // === Firewall HP (all levels) ===
+    public getHp(): number {
+        return this.hp;
+    }
+
+    public getMaxHp(): number {
+        return this.maxHp;
+    }
+
+    public restoreHp(): void {
+        this.hp = this.maxHp;
+        eventBus.emit("hpChanged", this.hp);
+    }
+
+    public increaseMaxHp(amount: number): void {
+        this.maxHp += amount;
+        this.hp += amount;
+        eventBus.emit("hpChanged", this.hp);
+    }
+
+    public takeDamage(amount: number): boolean {
+        this.hp = Math.max(0, this.hp - amount);
+        eventBus.emit("hpChanged", this.hp);
+        return this.hp <= 0;
+    }
+
+    public getHpFraction(): number {
+        return this.hp / this.maxHp;
+    }
+
+    // === Overdrive (temporary damage boost) ===
+    public getOverdriveTimer(): number {
+        return this.overdriveTimer;
+    }
+
+    public setOverdriveTimer(seconds: number): void {
+        this.overdriveTimer = seconds;
+    }
+
+    public tickOverdrive(): void {
+        if (this.overdriveTimer > 0) {
+            this.overdriveTimer--;
+            if (this.overdriveTimer === 0) {
+                eventBus.emit("damageChanged", this.getDamageNumber());
+            }
+        }
+    }
+
+    public isOverdriveActive(): boolean {
+        return this.overdriveTimer > 0;
+    }
+
+    // === Firewall (freeze virus spread/heal) ===
+    public getFirewallTimer(): number {
+        return this.firewallTimer;
+    }
+
+    public setFirewallTimer(seconds: number): void {
+        this.firewallTimer = seconds;
+    }
+
+    public tickFirewall(): void {
+        if (this.firewallTimer > 0) {
+            this.firewallTimer--;
+        }
+    }
+
+    public isFirewallActive(): boolean {
+        return this.firewallTimer > 0;
     }
 }

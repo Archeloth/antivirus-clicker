@@ -22,7 +22,7 @@ export class Grid {
     public forEachCells(callback: (cell: Cell) => void): void {
 
         this.cells.forEach(callback);
-    
+
     }
 
     private createCells(): void {
@@ -37,10 +37,14 @@ export class Grid {
         return this.cells.find(cell => cell.x === x && cell.y === y)
     }
 
+    public getCellsSnapshot(): Cell[] {
+        return [...this.cells];
+    }
+
     public getRandomEmptyCell(): Cell | undefined {
         const emptyCells = this.cells.filter(cell => !cell.hasEntity());
         if (emptyCells.length === 0) return undefined;
-        
+
         const randomIndex = getRandomInt(emptyCells.length);
         return emptyCells[randomIndex];
     }

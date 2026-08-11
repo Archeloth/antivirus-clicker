@@ -83,12 +83,47 @@ export class GridRenderer {
         const element = this.elements.get(cell);
         if (!element) return;
 
+        // Reset effect classes
+        element.classList.remove("cell--explosive", "cell--spreader", "cell--boss", "cell--healer", "cell--shielded");
+
         if (cell.entity instanceof Virus) {
             element.style.setProperty("--graphic", `"${cell.entity.graphic}"`);
+
+            if (cell.entity.explodesOnDestroy) {
+                element.classList.add("cell--explosive");
+            }
+            if (cell.entity.spreads) {
+                element.classList.add("cell--spreader");
+            }
+            if (cell.entity.isBoss) {
+                element.classList.add("cell--boss");
+            }
+            if (cell.entity.healsAdjacent) {
+                element.classList.add("cell--healer");
+            }
         } else if (cell.entity) {
             element.style.setProperty("--graphic", '"🦠"');
         } else {
             element.style.setProperty("--graphic", '""');
+        }
+
+        // Apply shielded effect if adjacent to a shielder
+        this.updateShieldedState(cell, element);
+    }
+
+    private updateShieldedState(cell: Cell, element: HTMLDivElement): void {
+        const offsets: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        let shielded = false;
+        for (const [dx, dy] of offsets) {
+            const neighbor = this.grid.getCell(cell.x + dx, cell.y + dy);
+            const entity = neighbor?.entity;
+            if (entity instanceof Virus && entity.shieldsAdjacent) {
+                shielded = true;
+                break;
+            }
+        }
+        if (shielded) {
+            element.classList.add("cell--shielded");
         }
     }
 

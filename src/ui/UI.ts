@@ -5,11 +5,13 @@ import { eventBus } from "../core/events";
 import { GridRenderer } from "./GridRenderer";
 import { HudRenderer } from "./HudRenderer";
 import { ShopRenderer } from "./ShopRenderer";
+import { EnemyInfoPanel } from "./EnemyInfoPanel";
 
 export class UI {
     private readonly gridRenderer;
     private readonly hudRenderer;
     private readonly shopRenderer;
+    private readonly enemyInfoPanel;
 
     constructor(
         game: Game,
@@ -24,7 +26,8 @@ export class UI {
 
         this.hudRenderer = new HudRenderer(
             playerState,
-            rootElement
+            rootElement,
+            game.getAbilitySystem()
         )
 
         this.shopRenderer = new ShopRenderer(
@@ -34,15 +37,28 @@ export class UI {
             game
         )
 
+        this.enemyInfoPanel = new EnemyInfoPanel(
+            rootElement
+        )
+
         eventBus.on(
             "phaseChanged",
             (phase) => {
-                this.gridRenderer.setVisible(phase === GamePhase.PLAYING);
+                this.gridRenderer.setVisible(phase === GamePhase.PLAYING || phase === GamePhase.READY);
             }
         );
 
         window.addEventListener("keydown", (event) => {
-            if (game.getPhase() !== GamePhase.PLAYING) return;
+            const phase = game.getPhase();
+
+            // Enter starts the level from READY phase
+            if (event.key === "Enter" && phase === GamePhase.READY) {
+                game.confirmLevelStart();
+                event.preventDefault();
+                return;
+            }
+
+            if (phase !== GamePhase.PLAYING) return;
 
             switch (event.key) {
                 case "ArrowUp":
@@ -61,6 +77,31 @@ export class UI {
                     game.moveSelection(1, 0);
                     event.preventDefault();
                     break;
+                case "q":
+                case "Q":
+                    game.useAbility("emp-blast");
+                    event.preventDefault();
+                    break;
+                case "e":
+                case "E":
+                    game.useAbility("nuke");
+                    event.preventDefault();
+                    break;
+                case "r":
+                case "R":
+                    game.useAbility("overdrive");
+                    event.preventDefault();
+                    break;
+                case "f":
+                case "F":
+                    game.useAbility("firewall");
+                    event.preventDefault();
+                    break;
+                case "t":
+                case "T":
+                    game.useAbility("credit-surge");
+                    event.preventDefault();
+                    break;
             }
         });
     }
@@ -69,6 +110,7 @@ export class UI {
         this.hudRenderer.render();
         this.gridRenderer.render();
         this.shopRenderer.render();
+        this.enemyInfoPanel.render();
     }
 
     public getGridRenderer(): GridRenderer {

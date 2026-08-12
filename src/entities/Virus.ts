@@ -21,6 +21,14 @@ export class Virus extends Entity {
     isBoss = false; // Boss flag
     private spreadCooldown = 0; // Ticks until next spread (slows exponential growth)
 
+    public getSpreadCooldown(): number {
+        return this.spreadCooldown;
+    }
+
+    public setSpreadCooldown(value: number): void {
+        this.spreadCooldown = value;
+    }
+
     constructor(name: string, health: number, damagePerClick: number, reward: number, graphic: string) {
         super(health, reward);
         this.name = name;

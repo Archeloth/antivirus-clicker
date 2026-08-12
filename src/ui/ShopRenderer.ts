@@ -16,17 +16,22 @@ const TIERS: Record<string, number> = {
     "root-access": 2,
     "tick-rate-upgrade-2": 2,
     "firewall-integrity": 3,
-    "emp-blast": 3,
-    "nuke": 4,
-    "overdrive": 5,
-    "firewall": 6,
-    "credit-surge": 7,
 };
+
+// Abilities are rendered in a separate side column (in unlock order)
+const ABILITY_IDS = [
+    "emp-blast",
+    "nuke",
+    "overdrive",
+    "firewall",
+    "credit-surge",
+];
 
 export class ShopRenderer {
     private readonly shopElement: HTMLDivElement;
     private readonly upgradeNodes = new Map<string, HTMLDivElement>();
     private readonly upgradeCostElements = new Map<string, HTMLDivElement>();
+    private readonly startButton: HTMLButtonElement;
     private readonly finalBossButton: HTMLButtonElement;
     private readonly gameWonOverlay: HTMLDivElement;
     private readonly gameLostOverlay: HTMLDivElement;
@@ -40,13 +45,17 @@ export class ShopRenderer {
         this.shopElement = document.createElement("div");
         this.shopElement.className = "shop";
 
+        const shopContent = document.createElement("div");
+        shopContent.className = "shop-content";
+
         const treeElement = document.createElement("div");
         treeElement.className = "upgrade-tree";
 
-        // Group upgrades by tier
+        // Group upgrades by tier (excluding abilities, which go in their own column)
         const maxTier = Math.max(...Object.values(TIERS).map(Number));
         const tiers: Upgrade[][] = Array.from({ length: maxTier + 1 }, () => []);
         shop.getUpgrades().forEach((upgrade) => {
+            if (ABILITY_IDS.includes(upgrade.id)) return;
             const tier = TIERS[upgrade.id] ?? 0;
             const tierRow = tiers[tier];
             if (tierRow) tierRow.push(upgrade);
@@ -73,15 +82,37 @@ export class ShopRenderer {
             }
         }
 
-        this.shopElement.appendChild(treeElement);
+        shopContent.appendChild(treeElement);
 
-        const startButton = document.createElement("button");
-        startButton.className = "start-next-level";
-        startButton.innerText = "Start Next Level";
-        startButton.addEventListener("click", () => {
+        // Abilities column — separate side column with the active abilities
+        const abilitiesColumn = document.createElement("div");
+        abilitiesColumn.className = "upgrade-abilities-column";
+
+        const abilitiesTitle = document.createElement("div");
+        abilitiesTitle.className = "upgrade-abilities-title";
+        abilitiesTitle.textContent = "ABILITIES";
+        abilitiesColumn.appendChild(abilitiesTitle);
+
+        ABILITY_IDS.forEach((abilityId) => {
+            const upgrade = shop.getUpgrades().find(u => u.id === abilityId);
+            if (!upgrade) return;
+            const node = this.createUpgradeNode(upgrade);
+            node.classList.add("upgrade-node--ability");
+            abilitiesColumn.appendChild(node);
+            this.upgradeNodes.set(upgrade.id, node);
+        });
+
+        shopContent.appendChild(abilitiesColumn);
+
+        this.shopElement.appendChild(shopContent);
+
+        this.startButton = document.createElement("button");
+        this.startButton.className = "start-next-level";
+        this.startButton.innerText = "Start Next Level";
+        this.startButton.addEventListener("click", () => {
             this.game.startNextLevel();
         });
-        this.shopElement.appendChild(startButton);
+        this.shopElement.appendChild(this.startButton);
 
         // Replay Level button — restarts current level without progressing
         const replayButton = document.createElement("button");
@@ -92,7 +123,7 @@ export class ShopRenderer {
         });
         this.shopElement.appendChild(replayButton);
 
-        // Final Boss button — visible only when all upgrades are maxed
+        // Final Boss button — visible when the player has reached security level 10
         this.finalBossButton = document.createElement("button");
         this.finalBossButton.className = "final-boss-button";
         this.finalBossButton.innerText = "🔥 Final Boss 🔥";
@@ -178,8 +209,30 @@ export class ShopRenderer {
             "gameLost",
             () => {
                 this.gameLostOverlay.style.display = "flex";
+                this.updateStartButtonState();
             }
         );
+
+        eventBus.on(
+            "levelCompleted",
+            () => {
+                this.updateStartButtonState();
+            }
+        );
+    }
+
+    private updateStartButtonState(): void {
+        if (this.game.wasDefeated()) {
+            this.startButton.disabled = true;
+            this.startButton.style.opacity = "0.5";
+            this.startButton.style.cursor = "not-allowed";
+            this.startButton.title = "You were defeated! Replay the level to try again.";
+        } else {
+            this.startButton.disabled = false;
+            this.startButton.style.opacity = "";
+            this.startButton.style.cursor = "";
+            this.startButton.title = "";
+        }
     }
 
     private createUpgradeNode(upgrade: Upgrade): HTMLDivElement {
@@ -221,8 +274,8 @@ export class ShopRenderer {
             this.updateUpgradeNode(upgrade);
         });
 
-        // Show the Final Boss button only when all upgrades are maxed
-        this.finalBossButton.style.display = this.shop.isAllMaxed() ? "block" : "none";
+        // Show the Final Boss button when the player has reached security level 10
+        this.finalBossButton.style.display = this.playerState.getSecurityLevel() >= 10 ? "block" : "none";
     }
 
     private updateUpgradeNode(upgrade: Upgrade): void {

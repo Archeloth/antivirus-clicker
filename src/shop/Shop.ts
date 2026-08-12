@@ -143,15 +143,15 @@ export class Shop {
                 1,
                 ["firewall"],
             ),
-            // === Firewall Integrity (repeatable HP upgrade) ===
+            // === Firewall Integrity (HP upgrade, 4 levels) ===
             new Upgrade(
                 "firewall-integrity",
                 "Firewall Integrity",
-                "Increase max Firewall HP by +25",
-                40,
-                1.6,
-                () => { this.playerState.increaseMaxHp(25); },
-                10,
+                "Increase max Firewall HP by +250",
+                100,
+                1.8,
+                () => { this.playerState.increaseMaxHp(250); },
+                4,
             ),
         ];
 

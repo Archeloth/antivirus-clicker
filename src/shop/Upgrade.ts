@@ -45,4 +45,8 @@ export class Upgrade {
     public forceLevelUp(): void {
         this.level++;
     }
+
+    public resetLevel(): void {
+        this.level = 0;
+    }
 }

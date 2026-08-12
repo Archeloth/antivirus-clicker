@@ -1,6 +1,13 @@
 import type { Cell } from "./Cell";
 import type { Grid } from "./Grid";
 
+export interface SelectionRectData {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 /**
  * A rectangular zone on the grid that the player moves with arrow keys.
  * All cells inside the zone take ticking damage.
@@ -36,6 +43,22 @@ export class SelectionRect {
 
     public getHeight(): number {
         return this.height;
+    }
+
+    public serialize(): SelectionRectData {
+        return {
+            x: this.x,
+            y: this.y,
+            width: this.width,
+            height: this.height,
+        };
+    }
+
+    public deserialize(data: SelectionRectData): void {
+        this.x = data.x;
+        this.y = data.y;
+        this.width = data.width;
+        this.height = data.height;
     }
 
     public move(dx: number, dy: number): void {

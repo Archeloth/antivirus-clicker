@@ -23,6 +23,12 @@ export class GridRenderer {
         eventBus.on(
             "entityDestroyed",
             ({ cell }) => {
+                const element = this.elements.get(cell);
+                // If the cell is currently playing its dying animation,
+                // let the animationend handler clear it instead
+                if (element?.classList.contains("cell--dying")) {
+                    return;
+                }
                 this.updateCell(cell);
             }
         );
@@ -31,6 +37,13 @@ export class GridRenderer {
             "entityDamaged",
             ({ cell }) => {
                 this.shakeCell(cell);
+            }
+        );
+
+        eventBus.on(
+            "entityDying",
+            ({ cell }) => {
+                this.playDyingAnimation(cell);
             }
         );
 
@@ -53,6 +66,10 @@ export class GridRenderer {
         if (this.gridElement) {
             this.gridElement.style.display = visible ? "grid" : "none";
         }
+    }
+
+    public getCellElement(cell: Cell): HTMLDivElement | undefined {
+        return this.elements.get(cell);
     }
 
     public render(): void {
@@ -84,7 +101,10 @@ export class GridRenderer {
         if (!element) return;
 
         // Reset effect classes
-        element.classList.remove("cell--explosive", "cell--spreader", "cell--boss", "cell--healer", "cell--shielded");
+        element.classList.remove("cell--explosive", "cell--spreader", "cell--boss", "cell--healer", "cell--shielded", "cell--dying");
+
+        // Toggle ground shadow indicator (2.5D depth)
+        element.dataset.hasEntity = cell.hasEntity() ? "true" : "false";
 
         if (cell.entity instanceof Virus) {
             element.style.setProperty("--graphic", `"${cell.entity.graphic}"`);
@@ -150,5 +170,19 @@ export class GridRenderer {
         // Force reflow to restart the animation
         void element.offsetWidth;
         element.classList.add("shake");
+    }
+
+    private playDyingAnimation(cell: Cell): void {
+        const element = this.elements.get(cell);
+        if (!element) return;
+
+        element.classList.add("cell--dying");
+
+        // After the death animation completes, clear the cell
+        const onEnd = () => {
+            element.removeEventListener("animationend", onEnd);
+            this.updateCell(cell);
+        };
+        element.addEventListener("animationend", onEnd);
     }
 }

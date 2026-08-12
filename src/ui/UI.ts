@@ -6,12 +6,15 @@ import { GridRenderer } from "./GridRenderer";
 import { HudRenderer } from "./HudRenderer";
 import { ShopRenderer } from "./ShopRenderer";
 import { EnemyInfoPanel } from "./EnemyInfoPanel";
+import { DamagePopupManager } from "./DamagePopup";
+import { SavePanel } from "./SavePanel";
 
 export class UI {
     private readonly gridRenderer;
     private readonly hudRenderer;
     private readonly shopRenderer;
     private readonly enemyInfoPanel;
+    private readonly savePanel;
 
     constructor(
         game: Game,
@@ -28,18 +31,30 @@ export class UI {
             playerState,
             rootElement,
             game.getAbilitySystem()
-        )
+        );
 
         this.shopRenderer = new ShopRenderer(
             playerState,
             game.getShop(),
             rootElement,
             game
-        )
+        );
 
         this.enemyInfoPanel = new EnemyInfoPanel(
             rootElement
-        )
+        );
+
+        this.savePanel = new SavePanel(
+            game,
+            rootElement
+        );
+
+        // Damage popups and credit collection animations.
+        // The eventBus keeps the manager alive via its subscription closures.
+        new DamagePopupManager(
+            rootElement,
+            this.gridRenderer
+        );
 
         eventBus.on(
             "phaseChanged",
@@ -111,6 +126,7 @@ export class UI {
         this.gridRenderer.render();
         this.shopRenderer.render();
         this.enemyInfoPanel.render();
+        this.savePanel.render();
     }
 
     public getGridRenderer(): GridRenderer {

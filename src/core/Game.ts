@@ -6,10 +6,55 @@ import type { Cell } from "./Cell";
 import { eventBus } from "./events";
 import { GamePhase } from "./GamePhase";
 import { Grid } from "./Grid";
-import { PlayerState } from "./PlayerState";
-import { SelectionRect } from "./SelectionRect";
+import { PlayerState, type PlayerStateData } from "./PlayerState";
+import { SaveManager } from "./SaveManager";
+import { SelectionRect, type SelectionRectData } from "./SelectionRect";
 import type { SecurityLevel } from "./SecurityLevel";
 import { Virus } from "../entities/Virus";
+import { BasicVirus } from "../entities/BasicVirus";
+import { FastVirus } from "../entities/FastVirus";
+import { ArmoredVirus } from "../entities/ArmoredVirus";
+import { ExplosiveVirus } from "../entities/ExplosiveVirus";
+import { HealerVirus } from "../entities/HealerVirus";
+import { SpreaderVirus } from "../entities/SpreaderVirus";
+import { SplitterVirus } from "../entities/SplitterVirus";
+import { ShielderVirus } from "../entities/ShielderVirus";
+import { LeechVirus } from "../entities/LeechVirus";
+import { BossVirus } from "../entities/BossVirus";
+
+export interface EntitySaveData {
+    x: number;
+    y: number;
+    type: string;
+    health: number;
+    reward: number;
+    armor: boolean;
+    name: string;
+    damagePerClick: number;
+    graphic: string;
+    explodesOnDestroy: boolean;
+    healsAdjacent: boolean;
+    splitsOnDeath: boolean;
+    shieldsAdjacent: boolean;
+    leech: boolean;
+    spreads: boolean;
+    isBoss: boolean;
+    spreadCooldown: number;
+}
+
+export interface GameSaveData {
+    playerState: PlayerStateData;
+    selectionRect: SelectionRectData;
+    phase: GamePhase;
+    timer: number;
+    damageTickTimer: number;
+    virusTickTimer: number;
+    bossAttackTimer: number;
+    hpTickTimer: number;
+    finalBossRound: boolean;
+    defeated: boolean;
+    entities: EntitySaveData[];
+}
 
 /**
  * Main game handler
@@ -29,6 +74,9 @@ export class Game {
     private hpTickTimer = 0;
     private readonly selectionRect: SelectionRect;
     private finalBossRound = false;
+    private defeated = false;
+    private readonly saveManager = new SaveManager();
+    private autoSaveCounter = 0;
 
     constructor() {
         this.grid = new Grid(8, 8);
@@ -62,6 +110,17 @@ export class Game {
         // Tick down temporary ability timers
         this.playerState.tickOverdrive();
         this.playerState.tickFirewall();
+
+        // Auto-save every 60 frames (~1 second) to protect against crashes
+        this.autoSaveCounter++;
+        if (this.autoSaveCounter >= 60) {
+            this.autoSaveCounter = 0;
+            this.saveManager.save(this);
+        }
+    }
+
+    public getSaveManager(): SaveManager {
+        return this.saveManager;
     }
 
     private updateVirusTicks(): void {
@@ -125,6 +184,7 @@ export class Game {
     private gameOver(): void {
         this.phase = GamePhase.SHOP;
         this.finalBossRound = false;
+        this.defeated = true;
         eventBus.emit("gameLost", undefined);
         eventBus.emit("phaseChanged", this.phase);
     }
@@ -171,6 +231,7 @@ export class Game {
 
     private completeLevel(): void {
         this.phase = GamePhase.SHOP;
+        this.defeated = false;
         this.clearGrid();
         eventBus.emit("timerChanged", 0);
         eventBus.emit("levelCompleted", this.securityLevel.levelNumber);
@@ -178,6 +239,12 @@ export class Game {
     }
 
     public startNextLevel(): void {
+        // If the player was defeated, they cannot progress — replay the current level instead
+        if (this.defeated) {
+            this.replayLevel();
+            return;
+        }
+
         this.playerState.increaseSecurityLevel();
         this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
         this.spawnSystem.setSecurityLevel(this.securityLevel);
@@ -256,6 +323,10 @@ export class Game {
         return this.phase;
     }
 
+    public wasDefeated(): boolean {
+        return this.defeated;
+    }
+
     public getRemainingTime(): number {
         const totalFrames = this.securityLevel.timeLimit * 60;
         return Math.max(0, Math.ceil((totalFrames - this.timer) / 60));
@@ -274,6 +345,9 @@ export class Game {
     }
 
     public startFinalBossRound(): void {
+        // Final boss is only available after security level 10
+        if (this.playerState.getSecurityLevel() < 10) return;
+
         this.clearGrid();
         this.finalBossRound = true;
         this.timer = 0;
@@ -349,6 +423,7 @@ export class Game {
             {
                 cell,
                 entity,
+                damage,
             }
         );
 
@@ -358,14 +433,20 @@ export class Game {
             if (virus?.leech) {
                 const leechCost = Math.abs(entity.reward);
                 this.playerState.spendCredits(leechCost);
+                eventBus.emit("creditsCollected", { cell, amount: -leechCost });
             } else {
-                this.playerState.addCredits(entity.reward + this.playerState.getCreditBonus());
+                const creditAmount = entity.reward + this.playerState.getCreditBonus();
+                this.playerState.addCredits(creditAmount);
+                eventBus.emit("creditsCollected", { cell, amount: creditAmount });
             }
 
             // Trigger death behaviors BEFORE removing the entity
             if (virus) {
                 virus.onDeath(this.grid, cell);
             }
+
+            // Notify renderers that the entity is dying (for death animation)
+            eventBus.emit("entityDying", { cell, entity });
 
             cell.removeEntity();
 
@@ -421,5 +502,195 @@ export class Game {
 
         eventBus.emit("phaseChanged", this.phase);
         eventBus.emit("timerChanged", this.getRemainingTime());
+    }
+
+    // === Save / Load ===
+
+    public serialize(): GameSaveData {
+        const entities: EntitySaveData[] = [];
+        this.grid.forEachCells(cell => {
+            const entity = cell.entity;
+            if (entity instanceof Virus) {
+                entities.push({
+                    x: cell.x,
+                    y: cell.y,
+                    type: entity.constructor.name,
+                    health: entity.health,
+                    reward: entity.reward,
+                    armor: entity.armor,
+                    name: entity.name,
+                    damagePerClick: entity.damagePerClick,
+                    graphic: entity.graphic,
+                    explodesOnDestroy: entity.explodesOnDestroy,
+                    healsAdjacent: entity.healsAdjacent,
+                    splitsOnDeath: entity.splitsOnDeath,
+                    shieldsAdjacent: entity.shieldsAdjacent,
+                    leech: entity.leech,
+                    spreads: entity.spreads,
+                    isBoss: entity.isBoss,
+                    spreadCooldown: entity.getSpreadCooldown(),
+                });
+            }
+        });
+
+        return {
+            playerState: this.playerState.serialize(),
+            selectionRect: this.selectionRect.serialize(),
+            phase: this.phase,
+            timer: this.timer,
+            damageTickTimer: this.damageTickTimer,
+            virusTickTimer: this.virusTickTimer,
+            bossAttackTimer: this.bossAttackTimer,
+            hpTickTimer: this.hpTickTimer,
+            finalBossRound: this.finalBossRound,
+            defeated: this.defeated,
+            entities,
+        };
+    }
+
+    public restoreFromSave(data: GameSaveData): void {
+        this.playerState.deserialize(data.playerState);
+        this.selectionRect.deserialize(data.selectionRect);
+        this.phase = data.phase;
+        this.timer = data.timer;
+        this.damageTickTimer = data.damageTickTimer;
+        this.virusTickTimer = data.virusTickTimer;
+        this.bossAttackTimer = data.bossAttackTimer;
+        this.hpTickTimer = data.hpTickTimer;
+        this.finalBossRound = data.finalBossRound;
+        this.defeated = data.defeated;
+
+        // Rebuild security level and spawn system from restored player state
+        this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
+        this.spawnSystem.setSecurityLevel(this.securityLevel);
+
+        // Rebuild the grid entities
+        this.clearGrid();
+        for (const entityData of data.entities) {
+            const cell = this.grid.getCell(entityData.x, entityData.y);
+            if (!cell) continue;
+            const virus = this.createVirusFromData(entityData);
+            if (virus) {
+                cell.placeEntity(virus);
+                eventBus.emit("entitySpawned", { cell, entity: virus });
+            }
+        }
+
+        // Re-sync the shop upgrade levels (Shop restores levels from PlayerState on construction,
+        // but the shop already exists here, so force-sync the upgrade levels)
+        this.shop.getUpgrades().forEach(upgrade => {
+            const savedLevel = this.playerState.getUpgradeLevel(upgrade.id);
+            while (upgrade.getLevel() < savedLevel) {
+                upgrade.forceLevelUp();
+            }
+        });
+
+        eventBus.emit("phaseChanged", this.phase);
+        eventBus.emit("timerChanged", this.getRemainingTime());
+        eventBus.emit("creditsChanged", this.playerState.getCredits());
+        eventBus.emit("damageChanged", this.playerState.getDamageNumber());
+        eventBus.emit("hpChanged", this.playerState.getHp());
+        eventBus.emit("tickIntervalChanged", this.playerState.getTickInterval());
+        eventBus.emit("selectionChanged", undefined);
+    }
+
+    public resetToNewGame(): void {
+        this.playerState.deserialize({
+            credits: 0,
+            securityLevel: 1,
+            damage: 20,
+            tickInterval: 30,
+            creditBonus: 0,
+            damageMultiplier: 1,
+            chainChance: 0,
+            upgradeLevels: {},
+            hp: 1000,
+            maxHp: 1000,
+            overdriveTimer: 0,
+            firewallTimer: 0,
+        });
+        this.selectionRect.deserialize({ x: 0, y: 0, width: 1, height: 1 });
+        this.phase = GamePhase.READY;
+        this.timer = 0;
+        this.damageTickTimer = 0;
+        this.virusTickTimer = 0;
+        this.bossAttackTimer = 0;
+        this.hpTickTimer = 0;
+        this.finalBossRound = false;
+        this.defeated = false;
+
+        this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
+        this.spawnSystem.setSecurityLevel(this.securityLevel);
+        this.abilitySystem.resetCooldowns();
+        this.clearGrid();
+
+        // Reset shop upgrade levels
+        this.shop.getUpgrades().forEach(upgrade => {
+            upgrade.resetLevel();
+        });
+
+        eventBus.emit("phaseChanged", this.phase);
+        eventBus.emit("timerChanged", this.getRemainingTime());
+        eventBus.emit("creditsChanged", this.playerState.getCredits());
+        eventBus.emit("damageChanged", this.playerState.getDamageNumber());
+        eventBus.emit("hpChanged", this.playerState.getHp());
+        eventBus.emit("tickIntervalChanged", this.playerState.getTickInterval());
+        eventBus.emit("selectionChanged", undefined);
+    }
+
+    private createVirusFromData(data: EntitySaveData): Virus | null {
+        let virus: Virus;
+        switch (data.type) {
+            case "BasicVirus":
+                virus = new BasicVirus();
+                break;
+            case "FastVirus":
+                virus = new FastVirus();
+                break;
+            case "ArmoredVirus":
+                virus = new ArmoredVirus();
+                break;
+            case "ExplosiveVirus":
+                virus = new ExplosiveVirus();
+                break;
+            case "HealerVirus":
+                virus = new HealerVirus();
+                break;
+            case "SpreaderVirus":
+                virus = new SpreaderVirus();
+                break;
+            case "SplitterVirus":
+                virus = new SplitterVirus();
+                break;
+            case "ShielderVirus":
+                virus = new ShielderVirus();
+                break;
+            case "LeechVirus":
+                virus = new LeechVirus();
+                break;
+            case "BossVirus":
+                virus = new BossVirus();
+                break;
+            default:
+                // Fallback: reconstruct a generic Virus with saved properties
+                virus = new Virus(data.name, data.health, data.damagePerClick, data.reward, data.graphic);
+                virus.explodesOnDestroy = data.explodesOnDestroy;
+                virus.healsAdjacent = data.healsAdjacent;
+                virus.splitsOnDeath = data.splitsOnDeath;
+                virus.shieldsAdjacent = data.shieldsAdjacent;
+                virus.leech = data.leech;
+                virus.spreads = data.spreads;
+                virus.isBoss = data.isBoss;
+                virus.armor = data.armor;
+                virus.setSpreadCooldown(data.spreadCooldown);
+                return virus;
+        }
+
+        // Restore runtime state for known virus types
+        virus.health = data.health;
+        virus.reward = data.reward;
+        virus.armor = data.armor;
+        virus.setSpreadCooldown(data.spreadCooldown);
+        return virus;
     }
 }

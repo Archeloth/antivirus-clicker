@@ -85,6 +85,9 @@ body {
   width: 500px;
   height: 500px;
   border: 1px solid black;
+  /* 2.5D view: tilt the board plane back for a pseudo-isometric look */
+  transform: perspective(800px) rotateX(24deg);
+  transform-style: preserve-3d;
 }
 
 .cell {
@@ -98,12 +101,37 @@ body {
   align-items: center;
   user-select: none;
   -webkit-user-select: none;
+  position: relative;
+  transform-style: preserve-3d;
+
+  /* Ground shadow beneath enemy graphics (2.5D depth) */
+  &::before {
+    content: "";
+    position: absolute;
+    bottom: 8%;
+    left: 50%;
+    width: 62%;
+    height: 14%;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.55) 0%, transparent 72%);
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  &[data-has-entity="true"]::before {
+    opacity: 1;
+  }
 
   &::after {
     content: var(--graphic, "");
     font-size: 1.5rem;
     line-height: 1;
     pointer-events: none;
+    /* Lift the emoji off the tilted board plane */
+    transform: translateZ(18px);
   }
 
   &:hover {
@@ -240,6 +268,38 @@ body {
   background: var(--code-bg);
   min-width: 520px;
   font-family: var(--mono);
+}
+
+.shop-content {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.upgrade-abilities-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  padding: 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-bg);
+}
+
+.upgrade-abilities-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+  color: var(--accent);
+  text-align: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--accent-border);
+}
+
+.upgrade-node--ability {
+  flex: 0 1 auto;
+  width: 100%;
 }
 
 .upgrade-tree {
@@ -503,6 +563,68 @@ body {
   transition: width 0.3s, background 0.3s;
 }
 
+/* Save panel — fixed on the left side */
+.save-panel {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  z-index: 600;
+}
+
+.save-panel-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-align: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.save-panel-button {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+.save-panel-button--danger {
+  border-color: #ef4444;
+  color: #ef4444;
+
+  &:hover {
+    background: #2a0000;
+    color: #fff;
+  }
+}
+
+.save-panel-status {
+  color: var(--text);
+  font-size: 0.7rem;
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
 /* Ready prompt — centered overlay on the grid */
 .ready-prompt {
   position: fixed;
@@ -618,5 +740,102 @@ body {
   &:hover {
     background: #4d0000;
     color: #fff;
+  }
+}
+
+/* Damage popups — floating red numbers on hit */
+.damage-popup {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ff5555;
+  text-shadow: 0 0 6px rgba(255, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  z-index: 100;
+  animation: popup-rise 0.9s ease-out forwards;
+}
+
+/* Credit popups — floating gold/green numbers on kill */
+.credit-popup {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #4ade80;
+  text-shadow: 0 0 6px rgba(74, 222, 128, 0.6), 0 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  z-index: 100;
+  animation: popup-rise 1s ease-out forwards;
+}
+
+.credit-popup--negative {
+  color: #ef4444;
+  text-shadow: 0 0 6px rgba(239, 68, 68, 0.6), 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes popup-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -40%) scale(0.6);
+  }
+
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -70%) scale(1.1);
+  }
+
+  30% {
+    transform: translate(-50%, -90%) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -160%) scale(0.95);
+  }
+}
+
+/* Virus dying animation — scale up, flash, and dissolve */
+.cell--dying {
+  animation: virus-death 0.45s ease-out forwards !important;
+}
+
+.cell--dying::after {
+  animation: virus-death-glyph 0.45s ease-out forwards;
+}
+
+@keyframes virus-death {
+  0% {
+    transform: scale(1);
+    background: #101820;
+    border-color: #233;
+  }
+
+  40% {
+    transform: scale(1.25);
+    background: rgba(255, 60, 60, 0.55);
+    border-color: #ff4444;
+    box-shadow: 0 0 18px rgba(255, 60, 60, 0.9);
+  }
+
+  100% {
+    transform: scale(0.4);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: transparent;
+    box-shadow: 0 0 0 rgba(255, 60, 60, 0);
+  }
+}
+
+@keyframes virus-death-glyph {
+  0% {
+    opacity: 1;
+    transform: translateZ(18px) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateZ(18px) scale(1.6) rotate(20deg);
   }
 }

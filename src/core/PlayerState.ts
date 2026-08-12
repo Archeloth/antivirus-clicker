@@ -1,5 +1,20 @@
 import { eventBus } from "./events";
 
+export interface PlayerStateData {
+    credits: number;
+    securityLevel: number;
+    damage: number;
+    tickInterval: number;
+    creditBonus: number;
+    damageMultiplier: number;
+    chainChance: number;
+    upgradeLevels: Record<string, number>;
+    hp: number;
+    maxHp: number;
+    overdriveTimer: number;
+    firewallTimer: number;
+}
+
 export class PlayerState {
     private credits = 0;
     private securityLevel = 1;
@@ -13,6 +28,38 @@ export class PlayerState {
     private maxHp = 1000;
     private overdriveTimer = 0;
     private firewallTimer = 0;
+
+    public serialize(): PlayerStateData {
+        return {
+            credits: this.credits,
+            securityLevel: this.securityLevel,
+            damage: this.damage,
+            tickInterval: this.tickInterval,
+            creditBonus: this.creditBonus,
+            damageMultiplier: this.damageMultiplier,
+            chainChance: this.chainChance,
+            upgradeLevels: Object.fromEntries(this.upgradeLevels),
+            hp: this.hp,
+            maxHp: this.maxHp,
+            overdriveTimer: this.overdriveTimer,
+            firewallTimer: this.firewallTimer,
+        };
+    }
+
+    public deserialize(data: PlayerStateData): void {
+        this.credits = data.credits;
+        this.securityLevel = data.securityLevel;
+        this.damage = data.damage;
+        this.tickInterval = data.tickInterval;
+        this.creditBonus = data.creditBonus;
+        this.damageMultiplier = data.damageMultiplier;
+        this.chainChance = data.chainChance;
+        this.upgradeLevels = new Map(Object.entries(data.upgradeLevels));
+        this.hp = data.hp;
+        this.maxHp = data.maxHp;
+        this.overdriveTimer = data.overdriveTimer;
+        this.firewallTimer = data.firewallTimer;
+    }
 
     public getCredits(): number {
         return this.credits;

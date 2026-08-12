@@ -15,6 +15,15 @@ export type GameEvents = {
     "entityDamaged": {
         cell: Cell;
         entity: Entity;
+        damage: number;
+    };
+    "entityDying": {
+        cell: Cell;
+        entity: Entity;
+    };
+    "creditsCollected": {
+        cell: Cell;
+        amount: number;
     };
     "creditsChanged": number;
     "damageChanged": number;

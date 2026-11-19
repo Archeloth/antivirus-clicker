@@ -1,140 +1,178 @@
-import type { Game } from "../core/Game";
-import { GamePhase } from "../core/GamePhase";
-import type { PlayerState } from "../core/PlayerState";
-import { eventBus } from "../core/events";
-import { GridRenderer } from "./GridRenderer";
-import { HudRenderer } from "./HudRenderer";
-import { ShopRenderer } from "./ShopRenderer";
-import { EnemyInfoPanel } from "./EnemyInfoPanel";
-import { DamagePopupManager } from "./DamagePopup";
-import { SavePanel } from "./SavePanel";
+import type { Game } from '../core/Game';
+import { h, setClass, setText } from './dom';
+import { GridView } from './GridView';
+import { LogPanel } from './LogPanel';
+import { Overlay } from './Overlay';
+import { Sfx } from './Sfx';
+import { ShopTab } from './ShopTab';
+import { StatusPanel } from './StatusPanel';
+import { SystemTab } from './SystemTab';
+import { ThreatTab } from './ThreatTab';
+import { Toasts } from './Toasts';
+import { WaveBar } from './WaveBar';
 
+type TabId = 'shop' | 'threats' | 'system';
+
+const MOVE_KEYS: Record<string, [number, number]> = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  w: [0, -1],
+  s: [0, 1],
+  a: [-1, 0],
+  d: [1, 0],
+};
+
+/**
+ * Builds the layout and owns every view. `render(dt)` is called once per
+ * animation frame; views read game state and write only DOM diffs.
+ */
 export class UI {
-    private readonly gridRenderer;
-    private readonly hudRenderer;
-    private readonly shopRenderer;
-    private readonly enemyInfoPanel;
-    private readonly savePanel;
+  private readonly grid: GridView;
+  private readonly status: StatusPanel;
+  private readonly waveBar: WaveBar;
+  private readonly overlay: Overlay;
+  private readonly shop: ShopTab;
+  private readonly threats: ThreatTab;
+  private readonly system: SystemTab;
+  private readonly tabButtons = new Map<TabId, HTMLButtonElement>();
+  private readonly tabBodies = new Map<TabId, HTMLElement>();
+  private readonly phaseLabel = h('span', { class: 'topbar-phase' });
+  private readonly pauseButton = h('button', { class: 'btn btn--small', type: 'button' });
+  private readonly muteButton = h('button', { class: 'btn btn--small', type: 'button' });
+  private activeTab: TabId = 'shop';
 
-    constructor(
-        game: Game,
-        playerState: PlayerState,
-        rootElement: HTMLElement
-    ) {
-        this.gridRenderer = new GridRenderer(
-            game.getGrid(),
-            rootElement,
-            game.getSelectionRect()
-        );
+  constructor(
+    private readonly game: Game,
+    root: HTMLElement,
+  ) {
+    new Sfx(game);
+    this.grid = new GridView(game);
+    this.status = new StatusPanel(game);
+    this.waveBar = new WaveBar(game);
+    this.overlay = new Overlay(game, this.grid.overlayHost, () => this.setTab('system'));
+    this.shop = new ShopTab(game);
+    this.threats = new ThreatTab(game);
+    this.system = new SystemTab(game);
+    const log = new LogPanel(game);
+    const toasts = new Toasts(game);
 
-        this.hudRenderer = new HudRenderer(
-            playerState,
-            rootElement,
-            game.getAbilitySystem()
-        );
+    this.pauseButton.addEventListener('click', () => game.togglePause());
+    this.muteButton.addEventListener('click', () => this.toggleMute());
 
-        this.shopRenderer = new ShopRenderer(
-            playerState,
-            game.getShop(),
-            rootElement,
-            game
-        );
+    const topbar = h(
+      'header',
+      { class: 'topbar' },
+      h('div', { class: 'brand' }, h('span', { class: 'brand-mark', text: '▲' }), 'antivirus', h('span', { class: 'brand-ext', text: '.exe' })),
+      this.phaseLabel,
+      h('div', { class: 'topbar-actions' }, this.pauseButton, this.muteButton),
+    );
 
-        this.enemyInfoPanel = new EnemyInfoPanel(
-            rootElement
-        );
-
-        this.savePanel = new SavePanel(
-            game,
-            rootElement
-        );
-
-        // Damage popups and credit collection animations.
-        // The eventBus keeps the manager alive via its subscription closures.
-        new DamagePopupManager(
-            rootElement,
-            this.gridRenderer
-        );
-
-        eventBus.on(
-            "phaseChanged",
-            (phase) => {
-                this.gridRenderer.setVisible(phase === GamePhase.PLAYING || phase === GamePhase.READY);
-            }
-        );
-
-        window.addEventListener("keydown", (event) => {
-            const phase = game.getPhase();
-
-            // Enter starts the level from READY phase
-            if (event.key === "Enter" && phase === GamePhase.READY) {
-                game.confirmLevelStart();
-                event.preventDefault();
-                return;
-            }
-
-            if (phase !== GamePhase.PLAYING) return;
-
-            switch (event.key) {
-                case "ArrowUp":
-                    game.moveSelection(0, -1);
-                    event.preventDefault();
-                    break;
-                case "ArrowDown":
-                    game.moveSelection(0, 1);
-                    event.preventDefault();
-                    break;
-                case "ArrowLeft":
-                    game.moveSelection(-1, 0);
-                    event.preventDefault();
-                    break;
-                case "ArrowRight":
-                    game.moveSelection(1, 0);
-                    event.preventDefault();
-                    break;
-                case "q":
-                case "Q":
-                    game.useAbility("emp-blast");
-                    event.preventDefault();
-                    break;
-                case "e":
-                case "E":
-                    game.useAbility("nuke");
-                    event.preventDefault();
-                    break;
-                case "r":
-                case "R":
-                    game.useAbility("overdrive");
-                    event.preventDefault();
-                    break;
-                case "f":
-                case "F":
-                    game.useAbility("firewall");
-                    event.preventDefault();
-                    break;
-                case "t":
-                case "T":
-                    game.useAbility("credit-surge");
-                    event.preventDefault();
-                    break;
-            }
-        });
+    const tabs = h('div', { class: 'tabs', role: 'tablist' });
+    const bodies = h('div', { class: 'tab-bodies' });
+    for (const [id, label, body] of [
+      ['shop', 'UPGRADES', this.shop.root],
+      ['threats', 'THREAT DB', this.threats.root],
+      ['system', 'SYSTEM', this.system.root],
+    ] as const) {
+      const button = h('button', { class: 'tab', type: 'button', role: 'tab', text: label });
+      button.addEventListener('click', () => this.setTab(id));
+      tabs.append(button);
+      this.tabButtons.set(id, button);
+      const wrapper = h('div', { class: 'tab-body' }, body);
+      bodies.append(wrapper);
+      this.tabBodies.set(id, wrapper);
     }
 
-    initialize() {
-        this.hudRenderer.render();
-        this.gridRenderer.render();
-        this.shopRenderer.render();
-        this.enemyInfoPanel.render();
-        this.savePanel.render();
-    }
+    const layout = h(
+      'main',
+      { class: 'layout' },
+      this.status.root,
+      h('section', { class: 'center' }, this.waveBar.root, this.grid.root, log.root),
+      h('aside', { class: 'panel panel--side' }, tabs, bodies),
+    );
 
-    public getGridRenderer(): GridRenderer {
-        return this.gridRenderer;
-    }
+    root.replaceChildren(topbar, layout, toasts.root);
+    this.setTab('shop');
+    this.bindKeys();
 
-    public update() {
-        this.hudRenderer.update();
-    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && game.phase === 'wave' && !game.paused) game.togglePause();
+      if (document.hidden) game.save();
+    });
+    window.addEventListener('beforeunload', () => game.save());
+  }
 
+  private setTab(id: TabId): void {
+    this.activeTab = id;
+    for (const [tab, button] of this.tabButtons) {
+      setClass(button, 'is-active', tab === id);
+      button.setAttribute('aria-selected', String(tab === id));
+    }
+    for (const [tab, body] of this.tabBodies) body.hidden = tab !== id;
+  }
+
+  private toggleMute(): void {
+    const s = this.game.player.settings;
+    s.muted = !s.muted;
+    this.game.save();
+  }
+
+  private bindKeys(): void {
+    const { game } = this;
+    window.addEventListener('keydown', (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, select')) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+      if (key === 'Enter' && game.phase === 'intermission' && !target?.closest('button, [role="button"]')) {
+        game.startWave();
+        event.preventDefault();
+        return;
+      }
+      if (key === 'p' || key === 'Escape') {
+        game.togglePause();
+        event.preventDefault();
+        return;
+      }
+      if (key === 'm') {
+        this.toggleMute();
+        return;
+      }
+      const move = MOVE_KEYS[key];
+      if (move) {
+        game.moveDaemon(move[0], move[1]);
+        event.preventDefault();
+        return;
+      }
+      const ability = game.abilities.abilities.find((a) => a.key === key);
+      if (ability) {
+        game.useAbility(ability.id);
+        event.preventDefault();
+      }
+    });
+  }
+
+  render(dt: number): void {
+    const { game } = this;
+    document.body.classList.toggle('reduced-motion', game.player.settings.reducedMotion);
+    setText(
+      this.phaseLabel,
+      game.paused ? '■ PAUSED' : game.phase === 'wave' ? '● SCANNING' : game.phase === 'victory' ? '★ SECURED' : '○ STANDBY',
+    );
+    setClass(this.phaseLabel, 'is-live', game.phase === 'wave' && !game.paused);
+    setText(this.pauseButton, game.paused ? 'RESUME [P]' : 'PAUSE [P]');
+    this.pauseButton.disabled = game.phase !== 'wave';
+    setText(this.muteButton, game.player.settings.muted ? 'SOUND OFF [M]' : 'SOUND ON [M]');
+
+    this.waveBar.render();
+    this.grid.render(dt);
+    this.overlay.render();
+    this.status.render();
+    if (this.activeTab === 'shop') this.shop.render();
+    else if (this.activeTab === 'threats') this.threats.render();
+    else this.system.render(dt);
+  }
 }

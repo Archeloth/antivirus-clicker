@@ -1,45 +1,23 @@
-export interface AbilityDefinition {
-    id: string;
-    name: string;
-    key: string;
-    description: string;
-    cooldown: number; // in seconds
+/** Active abilities. `id` matches the unlocking upgrade in data/upgrades.ts. */
+export interface AbilityDef {
+  id: string;
+  name: string;
+  key: string;
+  cooldown: number; // seconds
+  description: string;
 }
 
-export const ABILITIES: AbilityDefinition[] = [
-    {
-        id: "emp-blast",
-        name: "EMP Blast",
-        key: "Q",
-        description: "Deal 50 damage to all viruses on the grid",
-        cooldown: 20,
-    },
-    {
-        id: "nuke",
-        name: "Nuke",
-        key: "E",
-        description: "Deal 100 damage to all viruses in a 3×3 around the selection zone",
-        cooldown: 30,
-    },
-    {
-        id: "overdrive",
-        name: "Overdrive",
-        key: "R",
-        description: "Double damage for 5 seconds",
-        cooldown: 25,
-    },
-    {
-        id: "firewall",
-        name: "Firewall",
-        key: "F",
-        description: "Freeze all virus spread and healing for 5 seconds",
-        cooldown: 20,
-    },
-    {
-        id: "credit-surge",
-        name: "Credit Surge",
-        key: "T",
-        description: "Instantly gain 50 credits",
-        cooldown: 40,
-    },
+export const OVERDRIVE_DURATION = 8;
+export const FIREWALL_DURATION = 6;
+export const EMP_FRACTION = 0.25;
+export const EMP_BOSS_FRACTION = 0.05;
+export const LOGIC_BOMB_MULT = 10;
+export const MINER_KILLS = 50;
+
+export const ABILITIES: readonly AbilityDef[] = [
+  { id: 'emp', name: 'EMP Blast', key: '1', cooldown: 25, description: '25% max HP to every threat' },
+  { id: 'logic-bomb', name: 'Logic Bomb', key: '2', cooldown: 30, description: '10× click dmg, 3×3 at daemon' },
+  { id: 'overdrive', name: 'Overdrive', key: '3', cooldown: 35, description: '×2 damage for 8s' },
+  { id: 'firewall', name: 'Firewall', key: '4', cooldown: 40, description: 'Freeze threats for 6s' },
+  { id: 'miner', name: 'Crypto Miner', key: '5', cooldown: 60, description: 'Instant credits' },
 ];

@@ -1,12 +1,15 @@
 {
   "name": "antivirus-clicker",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src scripts",
+    "sim": "rolldown scripts/sim.ts -o .sim/sim.mjs -p node -f esm --log-level warn && node .sim/sim.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

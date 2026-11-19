@@ -1,33 +1,48 @@
-import type { Game, GameSaveData } from "./Game";
+const SAVE_KEY = 'antivirus-clicker-save';
 
-const SAVE_KEY = "antivirus-clicker-save";
-
+/**
+ * Thin, failure-tolerant wrapper around localStorage. Saves only persistent
+ * progress (PlayerState), never mid-wave grid state: reloading always lands
+ * in the intermission screen.
+ */
 export class SaveManager {
-    public save(game: Game): void {
-        try {
-            const data = game.serialize();
-            localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-        } catch (error) {
-            console.error("Failed to save game:", error);
-        }
+  write(data: unknown): boolean {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+      return true;
+    } catch (error) {
+      console.error('Failed to save game:', error);
+      return false;
     }
+  }
 
-    public load(): GameSaveData | null {
-        try {
-            const raw = localStorage.getItem(SAVE_KEY);
-            if (!raw) return null;
-            return JSON.parse(raw) as GameSaveData;
-        } catch (error) {
-            console.error("Failed to load game:", error);
-            return null;
-        }
+  read(): unknown {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      console.error('Failed to load game:', error);
+      return null;
     }
+  }
 
-    public hasSave(): boolean {
-        return localStorage.getItem(SAVE_KEY) !== null;
+  clear(): void {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {
+      // storage unavailable — nothing to clear
     }
+  }
 
-    public clear(): void {
-        localStorage.removeItem(SAVE_KEY);
+  static encode(data: unknown): string {
+    return btoa(encodeURIComponent(JSON.stringify(data)));
+  }
+
+  static decode(text: string): unknown {
+    try {
+      return JSON.parse(decodeURIComponent(atob(text.trim())));
+    } catch {
+      return null;
     }
+  }
 }

@@ -1,131 +1,110 @@
-import type { Cell } from "../core/Cell";
-import type { Grid } from "../core/Grid";
-import { eventBus } from "../core/events";
-import { Entity } from "./Entity";
+import { armorScale, dpsScale, hpScale, rewardScale } from '../data/balance';
+import type { BossDef, Trait, VirusDef } from '../data/viruses';
+
+export type Immunity = 'none' | 'click' | 'daemon' | 'all';
+
+let nextId = 1;
+
+/** Multipliers applied on top of level scaling, for spawned children/copies. */
+export interface SpawnScale {
+  hp: number;
+  reward: number;
+  dps: number;
+}
+
+const FULL: SpawnScale = { hp: 1, reward: 1, dps: 1 };
 
 /**
- * Virus enemy entity
+ * A live threat on the grid. All behavior lives in systems; this is plain state.
  */
-export class Virus extends Entity {
-    name: string;
-    damagePerClick: number;
-    graphic: string; // Emoji/character used to render this virus type
+export class Virus {
+  readonly id = nextId++;
+  maxHp: number;
+  hp: number;
+  dps: number;
+  reward: number;
+  armor: number;
 
-    // Behavior flags
-    explodesOnDestroy = false; // AOE damage on death
-    healsAdjacent = false; // Heals adjacent viruses each tick
-    splitsOnDeath = false; // Splits into 2 smaller viruses on death
-    shieldsAdjacent = false; // Adjacent viruses take no damage
-    leech = false; // Steals credits on death
-    spreads = false; // Spawns a copy on an adjacent empty cell
-    isBoss = false; // Boss flag
-    private spreadCooldown = 0; // Ticks until next spread (slows exponential growth)
+  /** 0 = original spawn; children/copies have higher generations and lose their trait. */
+  generation = 0;
+  attackTimer = 0.6 + Math.random() * 0.8;
+  traitTimer = 0;
+  /** Credits siphoned by a Vampire Bug, refunded on kill. */
+  stolen = 0;
+  /** Id of the Ransomware that encrypted this virus (0 = not encrypted). */
+  encryptedBy = 0;
+  /** Trojan still pretending to be a data packet. */
+  disguised = false;
+  disguiseTimer = 0;
+  /** Rootkit-style: cannot be damaged until revealed by the daemon. */
+  hidden = false;
+  revealTimer = 0;
+  immune: Immunity = 'none';
+  /** Frame stamp so a virus that moves mid-iteration is only updated once. */
+  stamp = 0;
 
-    public getSpreadCooldown(): number {
-        return this.spreadCooldown;
-    }
+  constructor(
+    readonly kind: string,
+    readonly name: string,
+    readonly tag: string,
+    readonly color: string,
+    stats: { hp: number; dps: number; reward: number; armor: number },
+    readonly trait?: Trait,
+    readonly boss?: BossDef,
+  ) {
+    this.maxHp = stats.hp;
+    this.hp = stats.hp;
+    this.dps = stats.dps;
+    this.reward = stats.reward;
+    this.armor = stats.armor;
+  }
 
-    public setSpreadCooldown(value: number): void {
-        this.spreadCooldown = value;
-    }
+  get hpFraction(): number {
+    return Math.max(0, this.hp / this.maxHp);
+  }
 
-    constructor(name: string, health: number, damagePerClick: number, reward: number, graphic: string) {
-        super(health, reward);
-        this.name = name;
-        this.damagePerClick = damagePerClick;
-        this.graphic = graphic;
-    }
+  /** The trait only applies to first-generation threats (prevents runaway replication). */
+  has(trait: Trait): boolean {
+    return this.trait === trait && this.generation === 0;
+  }
+}
 
-    /**
-     * Called each game tick for behaviors like healing or spreading.
-     */
-    public onTick(grid: Grid, cell: Cell): void {
-        if (this.healsAdjacent) {
-            this.healNeighbors(grid, cell);
-        }
-        if (this.spreads) {
-            if (this.spreadCooldown > 0) {
-                this.spreadCooldown--;
-            } else {
-                this.spreadToNeighbor(grid, cell);
-                this.spreadCooldown = 4; // Spread only every 4 ticks (~4 seconds)
-            }
-        }
-    }
+export function createVirus(
+  def: VirusDef,
+  level: number,
+  generation = 0,
+  scale: SpawnScale = FULL,
+): Virus {
+  const virus = new Virus(
+    def.id,
+    def.name,
+    def.tag,
+    def.color,
+    {
+      hp: def.hp * hpScale(level) * scale.hp,
+      dps: def.dps * dpsScale(level) * scale.dps,
+      reward: def.reward * rewardScale(level) * scale.reward,
+      armor: def.armor * armorScale(level),
+    },
+    def.trait,
+  );
+  virus.generation = generation;
+  return virus;
+}
 
-    /**
-     * Called when this virus dies, for behaviors like explosion or splitting.
-     */
-    public onDeath(grid: Grid, cell: Cell): void {
-        if (this.explodesOnDestroy) {
-            this.explode(grid, cell);
-        }
-        if (this.splitsOnDeath) {
-            this.split(grid, cell);
-        }
-    }
-
-    private healNeighbors(grid: Grid, cell: Cell): void {
-        const neighbors = this.getNeighbors(grid, cell);
-        for (const neighbor of neighbors) {
-            if (neighbor.entity instanceof Virus) {
-                neighbor.entity.health += 10;
-            }
-        }
-    }
-
-    private spreadToNeighbor(grid: Grid, cell: Cell): void {
-        const neighbors = this.getNeighbors(grid, cell);
-        const empty = neighbors.filter(n => !n.hasEntity());
-        if (empty.length === 0) return;
-
-        const target = empty[Math.floor(Math.random() * empty.length)];
-        if (!target) return;
-
-        const copy = new Virus("Spore", 20, 1, 0, "🌱");
-        copy.spreads = true;
-        target.placeEntity(copy);
-    }
-
-    private explode(grid: Grid, cell: Cell): void {
-        const neighbors = this.getNeighbors(grid, cell);
-        for (const neighbor of neighbors) {
-            const entity = neighbor.entity;
-            if (entity) {
-                const died = entity.takeDamage(50);
-                if (died) {
-                    // Trigger death behaviors (chain explosions, splits, etc.)
-                    if (entity instanceof Virus) {
-                        entity.onDeath(grid, neighbor);
-                    }
-                    neighbor.removeEntity();
-                    eventBus.emit("entityDestroyed", { cell: neighbor, entity });
-                }
-                eventBus.emit("cellChanged", neighbor);
-            }
-        }
-    }
-
-    private split(grid: Grid, cell: Cell): void {
-        const neighbors = this.getNeighbors(grid, cell);
-        const empty = neighbors.filter(n => !n.hasEntity());
-        const splitCount = Math.min(2, empty.length);
-
-        for (let i = 0; i < splitCount; i++) {
-            const target = empty[i];
-            if (!target) continue;
-            const child = new Virus("Fragment", Math.max(10, Math.floor(this.health / 2)), 1, 1, "🧬");
-            target.placeEntity(child);
-        }
-    }
-
-    private getNeighbors(grid: Grid, cell: Cell): Cell[] {
-        const neighbors: Cell[] = [];
-        const offsets: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-        for (const [dx, dy] of offsets) {
-            const neighbor = grid.getCell(cell.x + dx, cell.y + dy);
-            if (neighbor) neighbors.push(neighbor);
-        }
-        return neighbors;
-    }
+export function createBoss(def: BossDef, level: number): Virus {
+  return new Virus(
+    def.id,
+    def.name,
+    def.tag,
+    def.color,
+    {
+      hp: def.hp * hpScale(level),
+      dps: def.dps * dpsScale(level),
+      reward: def.reward * rewardScale(level),
+      armor: def.armor * armorScale(level),
+    },
+    undefined,
+    def,
+  );
 }

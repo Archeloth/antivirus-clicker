@@ -1,696 +1,342 @@
-import { getSecurityLevel } from "../data/securityLevels";
-import { Shop } from "../shop/Shop";
-import { AbilitySystem } from "../system/AbilitySystem";
-import { SpawnSystem } from "../system/SpawnSystem";
-import type { Cell } from "./Cell";
-import { eventBus } from "./events";
-import { GamePhase } from "./GamePhase";
-import { Grid } from "./Grid";
-import { PlayerState, type PlayerStateData } from "./PlayerState";
-import { SaveManager } from "./SaveManager";
-import { SelectionRect, type SelectionRectData } from "./SelectionRect";
-import type { SecurityLevel } from "./SecurityLevel";
-import { Virus } from "../entities/Virus";
-import { BasicVirus } from "../entities/BasicVirus";
-import { FastVirus } from "../entities/FastVirus";
-import { ArmoredVirus } from "../entities/ArmoredVirus";
-import { ExplosiveVirus } from "../entities/ExplosiveVirus";
-import { HealerVirus } from "../entities/HealerVirus";
-import { SpreaderVirus } from "../entities/SpreaderVirus";
-import { SplitterVirus } from "../entities/SplitterVirus";
-import { ShielderVirus } from "../entities/ShielderVirus";
-import { LeechVirus } from "../entities/LeechVirus";
-import { BossVirus } from "../entities/BossVirus";
+import {
+  AUTO_START_DELAY,
+  CRIT_MULTIPLIER,
+  FINAL_LEVEL,
+  GRID_H,
+  GRID_W,
+  isBossLevel,
+  rootKeysFor,
+  waveClearBonus,
+} from '../data/balance';
+import { UPGRADE_BY_ID, upgradeCost, type UpgradeDef } from '../data/upgrades';
+import { VIRUS_BY_ID } from '../data/viruses';
+import type { Virus } from '../entities/Virus';
+import { AbilitySystem } from '../system/AbilitySystem';
+import { AchievementSystem } from '../system/AchievementSystem';
+import { BossSystem } from '../system/BossSystem';
+import { CombatSystem } from '../system/CombatSystem';
+import { DaemonSystem } from '../system/DaemonSystem';
+import { PickupSystem } from '../system/PickupSystem';
+import { VirusBehaviorSystem } from '../system/VirusBehaviorSystem';
+import { WaveSystem } from '../system/WaveSystem';
+import { chance } from '../utils/random';
+import type { Cell } from './Cell';
+import { EventBus } from './EventBus';
+import type { LogKind } from './GameEvents';
+import { Grid } from './Grid';
+import { PlayerState } from './PlayerState';
+import { SaveManager } from './SaveManager';
 
-export interface EntitySaveData {
-    x: number;
-    y: number;
-    type: string;
-    health: number;
-    reward: number;
-    armor: boolean;
-    name: string;
-    damagePerClick: number;
-    graphic: string;
-    explodesOnDestroy: boolean;
-    healsAdjacent: boolean;
-    splitsOnDeath: boolean;
-    shieldsAdjacent: boolean;
-    leech: boolean;
-    spreads: boolean;
-    isBoss: boolean;
-    spreadCooldown: number;
-}
+export type Phase = 'intermission' | 'wave' | 'victory';
+export type WaveResult = 'none' | 'cleared' | 'failed';
 
-export interface GameSaveData {
-    playerState: PlayerStateData;
-    selectionRect: SelectionRectData;
-    phase: GamePhase;
-    timer: number;
-    damageTickTimer: number;
-    virusTickTimer: number;
-    bossAttackTimer: number;
-    hpTickTimer: number;
-    finalBossRound: boolean;
-    defeated: boolean;
-    entities: EntitySaveData[];
-}
+const AUTOSAVE_EVERY = 10;
 
 /**
- * Main game handler
+ * Orchestrator: owns the state and the systems, runs the phase machine and
+ * exposes player actions. Contains no DOM code — the UI reads state each frame
+ * and listens to `bus` for discrete events. `update(dt)` is driven by a fixed
+ * timestep loop in main.ts (or by the headless sim).
  */
 export class Game {
-    private readonly grid: Grid;
-    private readonly playerState: PlayerState;
-    private spawnSystem: SpawnSystem;
-    private readonly shop: Shop;
-    private readonly abilitySystem: AbilitySystem;
-    private phase: GamePhase = GamePhase.READY;
-    private securityLevel: SecurityLevel;
-    private timer = 0;
-    private damageTickTimer = 0;
-    private virusTickTimer = 0;
-    private bossAttackTimer = 0;
-    private hpTickTimer = 0;
-    private readonly selectionRect: SelectionRect;
-    private finalBossRound = false;
-    private defeated = false;
-    private readonly saveManager = new SaveManager();
-    private autoSaveCounter = 0;
+  readonly bus = new EventBus();
+  readonly grid = new Grid(GRID_W, GRID_H);
+  readonly player = new PlayerState();
+  readonly storage = new SaveManager();
 
-    constructor() {
-        this.grid = new Grid(8, 8);
-        this.playerState = new PlayerState()
-        this.spawnSystem = new SpawnSystem(this.grid);
-        this.selectionRect = new SelectionRect(this.grid, 1, 1);
-        this.shop = new Shop(this.playerState, this.selectionRect);
-        this.abilitySystem = new AbilitySystem(this.playerState);
-        this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
-        this.spawnSystem.setSecurityLevel(this.securityLevel);
-        eventBus.emit("phaseChanged", this.phase);
+  readonly combat = new CombatSystem(this);
+  readonly waves = new WaveSystem(this);
+  readonly viruses = new VirusBehaviorSystem(this);
+  readonly bosses = new BossSystem(this);
+  readonly daemon = new DaemonSystem(this);
+  readonly abilities = new AbilitySystem(this);
+  readonly pickups = new PickupSystem(this);
+  readonly achievements = new AchievementSystem(this);
+
+  phase: Phase = 'intermission';
+  paused = false;
+  lastResult: WaveResult = 'none';
+  autoStartTimer = AUTO_START_DELAY;
+  /** Integrity lost during the current wave (for the flawless achievement). */
+  private damageTaken = 0;
+  private saveTimer = 0;
+  /** Disable persistence (headless sim). */
+  persist = true;
+
+  // ── Loop ─────────────────────────────────────────────────
+
+  update(dt: number): void {
+    if (this.paused) return;
+    const { player } = this;
+    player.stats.playTime += dt;
+    this.abilities.update(dt);
+    this.achievements.update(dt);
+
+    if (this.phase === 'wave') {
+      player.tickBuffs(dt);
+      player.hp = Math.min(player.maxHp, player.hp + player.regenPerSecond * dt);
+      this.waves.update(dt);
+      this.bosses.update(dt);
+      this.viruses.update(dt);
+      this.daemon.update(dt);
+      this.pickups.update(dt);
+
+      if (player.hp <= 0) this.failWave();
+      else if (this.waves.isCleared()) this.clearWave();
+    } else if (this.phase === 'intermission' && player.settings.autoStart) {
+      this.autoStartTimer -= dt;
+      if (this.autoStartTimer <= 0) this.startWave();
     }
 
-    public start(): void {
-        this.loop();
+    this.saveTimer += dt;
+    if (this.saveTimer >= AUTOSAVE_EVERY) this.save();
+  }
+
+  // ── Phase transitions ────────────────────────────────────
+
+  startWave(): void {
+    if (this.phase !== 'intermission') return;
+    const level = this.player.level;
+    this.resetBoard();
+    this.player.restoreHp();
+    this.damageTaken = 0;
+    this.phase = 'wave';
+    this.paused = false;
+    this.log(`Wave ${level} deployed. Scanning for threats...`, 'system');
+    this.bus.emit('waveStarted', { level, boss: isBossLevel(level) });
+    this.waves.begin(level);
+  }
+
+  private clearWave(): void {
+    const { player } = this;
+    const level = this.waves.level;
+    const bonus = waveClearBonus(level) * player.creditMult;
+    player.addCredits(bonus);
+    if (this.damageTaken === 0 && level >= 3) player.stats.flawlessWaves++;
+    if (level >= player.highestLevel) player.highestLevel = level + 1;
+    player.level = Math.min(level + 1, player.highestLevel);
+
+    this.resetBoard();
+    this.lastResult = 'cleared';
+    this.autoStartTimer = AUTO_START_DELAY;
+    this.bus.emit('waveCleared', { level, bonus });
+    this.log(`Wave ${level} cleared. System stable.`, 'good');
+
+    if (level === FINAL_LEVEL && !player.victory) {
+      player.victory = true;
+      this.phase = 'victory';
+      this.bus.emit('victory', undefined);
+      this.log('SYSTEM SECURED. The Zero-Day has been patched.', 'good');
+    } else {
+      this.phase = 'intermission';
+    }
+    this.achievements.check();
+    this.save();
+  }
+
+  private failWave(): void {
+    const level = this.waves.level;
+    this.player.hp = 0;
+    this.resetBoard();
+    this.phase = 'intermission';
+    this.lastResult = 'failed';
+    this.autoStartTimer = AUTO_START_DELAY * 2;
+    this.bus.emit('waveFailed', { level });
+    this.log(`SYSTEM BREACHED on wave ${level}. Upgrade and redeploy.`, 'alert');
+    this.save();
+  }
+
+  /** Abort the current wave (counts as a failure, keeps credits). */
+  abortWave(): void {
+    if (this.phase === 'wave') this.failWave();
+  }
+
+  continueAfterVictory(): void {
+    if (this.phase === 'victory') this.phase = 'intermission';
+  }
+
+  togglePause(): void {
+    if (this.phase === 'wave') this.paused = !this.paused;
+  }
+
+  selectLevel(level: number): void {
+    if (this.phase !== 'intermission') return;
+    this.player.level = Math.max(1, Math.min(this.player.highestLevel, level));
+  }
+
+  private resetBoard(): void {
+    this.grid.clear();
+    this.bosses.clear();
+    this.waves.stopSpawning();
+    this.abilities.reset();
+    this.player.clearBuffs();
+    this.daemon.reset();
+  }
+
+  // ── Player actions ───────────────────────────────────────
+
+  clickCell(cell: Cell): void {
+    if (this.phase !== 'wave' || this.paused) return;
+    const { player } = this;
+    player.stats.clicks++;
+
+    if (cell.pickup) {
+      this.pickups.collect(cell);
+      return;
+    }
+    const virus = cell.virus;
+    if (!virus) return;
+
+    if (virus.disguised) {
+      player.stats.trojansCaught++;
+      this.log('Trojan quarantined before activation. Double credits!', 'good');
+      this.combat.kill(cell, 'click', 0, 2);
+      return;
     }
 
-    public update(): void {
-        this.abilitySystem.update();
+    const crit = chance(player.critChance);
+    if (crit) player.stats.crits++;
+    const damage = player.clickDamage * (crit ? CRIT_MULTIPLIER : 1);
+    this.combat.damage(cell, damage, 'click', crit);
+  }
 
-        if (this.phase === GamePhase.PLAYING) {
-            this.spawnSystem.update();
-            this.updateTimer();
-            this.updateDamageTick();
-            this.updateVirusTicks();
-            this.updateHpDamage();
-            this.checkFinalBossDefeated();
-            this.updateBossAttack();
-        }
+  moveDaemon(dx: number, dy: number): void {
+    if (this.phase !== 'wave' || this.paused) return;
+    this.daemon.move(dx, dy);
+  }
 
-        // Tick down temporary ability timers
-        this.playerState.tickOverdrive();
-        this.playerState.tickFirewall();
+  placeDaemon(cell: Cell): void {
+    if (this.phase !== 'wave' || this.paused) return;
+    this.daemon.centerOn(cell);
+  }
 
-        // Auto-save every 60 frames (~1 second) to protect against crashes
-        this.autoSaveCounter++;
-        if (this.autoSaveCounter >= 60) {
-            this.autoSaveCounter = 0;
-            this.saveManager.save(this);
-        }
+  useAbility(id: string): boolean {
+    return this.abilities.use(id);
+  }
+
+  // ── Shop ─────────────────────────────────────────────────
+
+  upgradeLocked(def: UpgradeDef): string | undefined {
+    const { player } = this;
+    if (def.requiresLevel !== undefined && player.highestLevel < def.requiresLevel) {
+      return `Reach level ${def.requiresLevel}`;
     }
-
-    public getSaveManager(): SaveManager {
-        return this.saveManager;
+    for (const req of def.requires ?? []) {
+      if (player.lvl(req.id) < req.level) {
+        return `${UPGRADE_BY_ID.get(req.id)?.name ?? req.id} Lv ${req.level}`;
+      }
     }
+    return undefined;
+  }
 
-    private updateVirusTicks(): void {
-        // Firewall freezes virus spread/heal
-        if (this.playerState.isFirewallActive()) return;
+  upgradeMaxed(def: UpgradeDef): boolean {
+    return def.max !== undefined && this.player.lvl(def.id) >= def.max;
+  }
 
-        this.virusTickTimer++;
-
-        // Run virus behaviors once per second (60 frames)
-        if (this.virusTickTimer >= 60) {
-            this.virusTickTimer = 0;
-            const cells = this.grid.getCellsSnapshot();
-            for (const cell of cells) {
-                const entity = cell.entity;
-                if (entity instanceof Virus) {
-                    entity.onTick(this.grid, cell);
-                    eventBus.emit("cellChanged", cell);
-                }
-            }
-        }
+  /** Cost and number of levels a purchase would buy (honoring buy-max mode). */
+  quote(def: UpgradeDef): { cost: number; count: number } {
+    const { player } = this;
+    const start = player.lvl(def.id);
+    const first = upgradeCost(def, start);
+    if (!player.settings.buyMax) return { cost: first, count: 1 };
+    let cost = 0;
+    let count = 0;
+    while (count < 500) {
+      const level = start + count;
+      if (def.max !== undefined && level >= def.max) break;
+      const next = upgradeCost(def, level);
+      if (cost + next > player.credits) break;
+      cost += next;
+      count++;
     }
+    return count === 0 ? { cost: first, count: 1 } : { cost, count };
+  }
 
-    private updateBossAttack(): void {
-        if (!this.finalBossRound) return;
+  buy(id: string): boolean {
+    const def = UPGRADE_BY_ID.get(id);
+    if (!def || this.upgradeLocked(def) || this.upgradeMaxed(def)) return false;
+    const { cost, count } = this.quote(def);
+    if (!this.player.spend(cost)) return false;
 
-        this.bossAttackTimer++;
+    const hpFraction = this.player.hp / this.player.maxHp;
+    const level = this.player.lvl(id) + count;
+    this.player.upgrades.set(id, level);
+    // Keep the integrity fraction when max HP grows mid-wave
+    this.player.hp = hpFraction * this.player.maxHp;
+    this.bus.emit('purchased', { id, level });
+    return true;
+  }
 
-        // Boss attacks every 3 seconds (180 frames)
-        if (this.bossAttackTimer >= 180) {
-            this.bossAttackTimer = 0;
-            const died = this.playerState.takeDamage(10);
-            if (died) {
-                this.gameOver();
-            }
-        }
+  // ── Prestige ─────────────────────────────────────────────
+
+  get prestigeGain(): number {
+    return rootKeysFor(this.player.highestLevel - 1);
+  }
+
+  prestige(): boolean {
+    const gain = this.prestigeGain;
+    if (gain <= 0 || this.phase === 'wave') return false;
+    this.player.prestige(gain);
+    this.resetBoard();
+    this.phase = 'intermission';
+    this.lastResult = 'none';
+    this.bus.emit('prestige', { keys: gain });
+    this.bus.emit('stateReset', undefined);
+    this.log(`OS reinstalled. +${gain} root keys. Fresh system, stronger admin.`, 'system');
+    this.achievements.check();
+    this.save();
+    return true;
+  }
+
+  // ── Spawning & damage helpers used by systems ────────────
+
+  spawnVirus(cell: Cell, virus: Virus): void {
+    cell.pickup = undefined;
+    cell.virus = virus;
+    if (!this.player.seen.has(virus.kind) && VIRUS_BY_ID.has(virus.kind)) {
+      this.player.seen.add(virus.kind);
+      if (!virus.disguised) this.log(`NEW THREAT: ${virus.name}. See Threat DB.`, 'warn');
     }
-
-    private updateHpDamage(): void {
-        this.hpTickTimer++;
-
-        // Every second, all viruses deal their summed damage to the player
-        if (this.hpTickTimer >= 60) {
-            this.hpTickTimer = 0;
-            let totalDamage = 0;
-            this.grid.forEachCells(cell => {
-                const entity = cell.entity;
-                if (entity instanceof Virus) {
-                    totalDamage += entity.damagePerClick;
-                }
-            });
-
-            if (totalDamage > 0) {
-                const died = this.playerState.takeDamage(totalDamage);
-                if (died) {
-                    this.gameOver();
-                }
-            }
-        }
-    }
-
-    private gameOver(): void {
-        this.phase = GamePhase.SHOP;
-        this.finalBossRound = false;
-        this.defeated = true;
-        eventBus.emit("gameLost", undefined);
-        eventBus.emit("phaseChanged", this.phase);
-    }
-
-    private checkFinalBossDefeated(): void {
-        if (!this.finalBossRound) return;
-
-        let bossAlive = false;
-        this.grid.forEachCells(cell => {
-            if (cell.entity instanceof Virus && (cell.entity as Virus).isBoss) {
-                bossAlive = true;
-            }
-        });
-
-        if (!bossAlive) {
-            this.finalBossRound = false;
-            eventBus.emit("gameWon", undefined);
-        }
-    }
-
-    private updateDamageTick(): void {
-        this.damageTickTimer++;
-
-        if (this.damageTickTimer >= this.playerState.getTickInterval()) {
-            this.damageTickTimer = 0;
-            this.selectionRect.getCells().forEach(cell => {
-                this.attackCell(cell);
-            });
-        }
-    }
-
-    private updateTimer(): void {
-        // No timer during the final boss round — the boss must be defeated
-        if (this.finalBossRound) return;
-
-        this.timer++;
-
-        if (this.timer >= this.securityLevel.timeLimit * 60) {
-            this.completeLevel();
-        } else {
-            eventBus.emit("timerChanged", this.getRemainingTime());
-        }
-    }
-
-    private completeLevel(): void {
-        this.phase = GamePhase.SHOP;
-        this.defeated = false;
-        this.clearGrid();
-        eventBus.emit("timerChanged", 0);
-        eventBus.emit("levelCompleted", this.securityLevel.levelNumber);
-        eventBus.emit("phaseChanged", this.phase);
-    }
-
-    public startNextLevel(): void {
-        // If the player was defeated, they cannot progress — replay the current level instead
-        if (this.defeated) {
-            this.replayLevel();
-            return;
-        }
-
-        this.playerState.increaseSecurityLevel();
-        this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
-        this.spawnSystem.setSecurityLevel(this.securityLevel);
-        this.timer = 0;
-        this.damageTickTimer = 0;
-        this.virusTickTimer = 0;
-        this.bossAttackTimer = 0;
-        this.hpTickTimer = 0;
-        this.abilitySystem.resetCooldowns();
-        this.playerState.restoreHp();
-        this.phase = GamePhase.READY;
-        this.finalBossRound = false;
-        this.clearGrid();
-
-        eventBus.emit("levelStarted", this.securityLevel.levelNumber);
-        eventBus.emit("phaseChanged", this.phase);
-        eventBus.emit("timerChanged", this.getRemainingTime());
-    }
-
-    public replayLevel(): void {
-        this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
-        this.spawnSystem.setSecurityLevel(this.securityLevel);
-        this.timer = 0;
-        this.damageTickTimer = 0;
-        this.virusTickTimer = 0;
-        this.bossAttackTimer = 0;
-        this.hpTickTimer = 0;
-        this.abilitySystem.resetCooldowns();
-        this.playerState.restoreHp();
-        this.phase = GamePhase.READY;
-        this.finalBossRound = false;
-        this.clearGrid();
-
-        eventBus.emit("levelStarted", this.securityLevel.levelNumber);
-        eventBus.emit("phaseChanged", this.phase);
-        eventBus.emit("timerChanged", this.getRemainingTime());
-    }
-
-    public confirmLevelStart(): void {
-        if (this.phase !== GamePhase.READY) return;
-
-        this.timer = 0;
-        this.damageTickTimer = 0;
-        this.virusTickTimer = 0;
-        this.bossAttackTimer = 0;
-        this.phase = GamePhase.PLAYING;
-
-        eventBus.emit("phaseChanged", this.phase);
-        eventBus.emit("timerChanged", this.getRemainingTime());
-    }
-
-    private clearGrid(): void {
-        this.grid.forEachCells(cell => {
-            if (cell.hasEntity()) {
-                cell.removeEntity();
-            }
-            // Emit for ALL cells so visual effects (e.g. shielded) are cleared
-            eventBus.emit("cellChanged", cell);
-        });
-    }
-
-    public loop(): void {
-        this.update();
-        requestAnimationFrame(() => this.loop());
-    }
-
-    public getGrid(): Grid {
-        return this.grid;
-    }
-
-    public getPlayerState(): PlayerState {
-        return this.playerState;
-    }
-
-    public getPhase(): GamePhase {
-        return this.phase;
-    }
-
-    public wasDefeated(): boolean {
-        return this.defeated;
-    }
-
-    public getRemainingTime(): number {
-        const totalFrames = this.securityLevel.timeLimit * 60;
-        return Math.max(0, Math.ceil((totalFrames - this.timer) / 60));
-    }
-
-    private isShieldedByNeighbor(cell: Cell): boolean {
-        const offsets: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-        for (const [dx, dy] of offsets) {
-            const neighbor = this.grid.getCell(cell.x + dx, cell.y + dy);
-            const neighborEntity = neighbor?.entity;
-            if (neighborEntity instanceof Virus && neighborEntity.shieldsAdjacent) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public startFinalBossRound(): void {
-        // Final boss is only available after security level 10
-        if (this.playerState.getSecurityLevel() < 10) return;
-
-        this.clearGrid();
-        this.finalBossRound = true;
-        this.timer = 0;
-        this.damageTickTimer = 0;
-        this.virusTickTimer = 0;
-        this.bossAttackTimer = 0;
-        this.playerState.restoreHp();
-        this.abilitySystem.resetCooldowns();
-        this.phase = GamePhase.READY;
-        this.spawnSystem.spawnFinalBoss();
-        eventBus.emit("phaseChanged", this.phase);
-    }
-
-    public useAbility(abilityId: string): void {
-        if (this.phase !== GamePhase.PLAYING) return;
-
-        if (!this.abilitySystem.tryUse(abilityId)) return;
-
-        // Damage abilities handled here (they need grid access)
-        const ability = this.abilitySystem.getAbilities().find(a => a.id === abilityId);
-        if (!ability) return;
-
-        if (abilityId === "emp-blast") {
-            this.grid.forEachCells(cell => {
-                const entity = cell.entity;
-                if (entity instanceof Virus) {
-                    entity.takeDamage(50);
-                    if (entity.health <= 0) {
-                        cell.removeEntity();
-                        eventBus.emit("entityDestroyed", { cell, entity });
-                    }
-                }
-            });
-        } else if (abilityId === "nuke") {
-            const centerX = this.selectionRect.getX() + Math.floor(this.selectionRect.getWidth() / 2);
-            const centerY = this.selectionRect.getY() + Math.floor(this.selectionRect.getHeight() / 2);
-            for (let dy = -1; dy <= 1; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                    const cell = this.grid.getCell(centerX + dx, centerY + dy);
-                    const entity = cell?.entity;
-                    if (entity instanceof Virus) {
-                        entity.takeDamage(100);
-                        if (entity.health <= 0) {
-                            cell!.removeEntity();
-                            eventBus.emit("entityDestroyed", { cell: cell!, entity });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    public getAbilitySystem(): AbilitySystem {
-        return this.abilitySystem;
-    }
-
-    public attackCell(cell: Cell): void {
-        if (this.phase !== GamePhase.PLAYING) return;
-
-        const entity = cell.entity;
-        if (!entity) return;
-
-        // Shielder mechanic: adjacent shielded viruses take 75% reduced damage
-        const shielded = this.isShieldedByNeighbor(cell);
-        const damage = shielded
-            ? Math.ceil(this.playerState.getDamageNumber() * 0.25)
-            : this.playerState.getDamageNumber();
-
-        const died = entity.takeDamage(damage);
-
-        eventBus.emit(
-            "entityDamaged",
-            {
-                cell,
-                entity,
-                damage,
-            }
-        );
-
-        if (died) {
-            // Leech mechanic: killing a leech deducts credits
-            const virus = entity instanceof Virus ? entity : undefined;
-            if (virus?.leech) {
-                const leechCost = Math.abs(entity.reward);
-                this.playerState.spendCredits(leechCost);
-                eventBus.emit("creditsCollected", { cell, amount: -leechCost });
-            } else {
-                const creditAmount = entity.reward + this.playerState.getCreditBonus();
-                this.playerState.addCredits(creditAmount);
-                eventBus.emit("creditsCollected", { cell, amount: creditAmount });
-            }
-
-            // Trigger death behaviors BEFORE removing the entity
-            if (virus) {
-                virus.onDeath(this.grid, cell);
-            }
-
-            // Notify renderers that the entity is dying (for death animation)
-            eventBus.emit("entityDying", { cell, entity });
-
-            cell.removeEntity();
-
-            eventBus.emit(
-                "entityDestroyed",
-                {
-                    cell,
-                    entity,
-                }
-            );
-
-            // Code Injection: chance to chain damage to adjacent cells
-            const chainChance = this.playerState.getChainChance();
-            if (chainChance > 0 && Math.random() < chainChance) {
-                const neighbors: Cell[] = [];
-                const offsets: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-                for (const [dx, dy] of offsets) {
-                    const neighbor = this.grid.getCell(cell.x + dx, cell.y + dy);
-                    if (neighbor) neighbors.push(neighbor);
-                }
-                const target = neighbors[Math.floor(Math.random() * neighbors.length)];
-                if (target) {
-                    this.attackCell(target);
-                }
-            }
-        }
-    }
-
-    public moveSelection(dx: number, dy: number): void {
-        this.selectionRect.move(dx, dy);
-        eventBus.emit("selectionChanged", undefined);
-    }
-
-    public getSelectionRect(): SelectionRect {
-        return this.selectionRect;
-    }
-
-    public getShop(): Shop {
-        return this.shop;
-    }
-
-    public returnToShop(): void {
-        this.phase = GamePhase.SHOP;
-        this.finalBossRound = false;
-        this.timer = 0;
-        this.damageTickTimer = 0;
-        this.virusTickTimer = 0;
-        this.bossAttackTimer = 0;
-        this.hpTickTimer = 0;
-        this.abilitySystem.resetCooldowns();
-        this.playerState.restoreHp();
-        this.clearGrid();
-
-        eventBus.emit("phaseChanged", this.phase);
-        eventBus.emit("timerChanged", this.getRemainingTime());
-    }
-
-    // === Save / Load ===
-
-    public serialize(): GameSaveData {
-        const entities: EntitySaveData[] = [];
-        this.grid.forEachCells(cell => {
-            const entity = cell.entity;
-            if (entity instanceof Virus) {
-                entities.push({
-                    x: cell.x,
-                    y: cell.y,
-                    type: entity.constructor.name,
-                    health: entity.health,
-                    reward: entity.reward,
-                    armor: entity.armor,
-                    name: entity.name,
-                    damagePerClick: entity.damagePerClick,
-                    graphic: entity.graphic,
-                    explodesOnDestroy: entity.explodesOnDestroy,
-                    healsAdjacent: entity.healsAdjacent,
-                    splitsOnDeath: entity.splitsOnDeath,
-                    shieldsAdjacent: entity.shieldsAdjacent,
-                    leech: entity.leech,
-                    spreads: entity.spreads,
-                    isBoss: entity.isBoss,
-                    spreadCooldown: entity.getSpreadCooldown(),
-                });
-            }
-        });
-
-        return {
-            playerState: this.playerState.serialize(),
-            selectionRect: this.selectionRect.serialize(),
-            phase: this.phase,
-            timer: this.timer,
-            damageTickTimer: this.damageTickTimer,
-            virusTickTimer: this.virusTickTimer,
-            bossAttackTimer: this.bossAttackTimer,
-            hpTickTimer: this.hpTickTimer,
-            finalBossRound: this.finalBossRound,
-            defeated: this.defeated,
-            entities,
-        };
-    }
-
-    public restoreFromSave(data: GameSaveData): void {
-        this.playerState.deserialize(data.playerState);
-        this.selectionRect.deserialize(data.selectionRect);
-        this.phase = data.phase;
-        this.timer = data.timer;
-        this.damageTickTimer = data.damageTickTimer;
-        this.virusTickTimer = data.virusTickTimer;
-        this.bossAttackTimer = data.bossAttackTimer;
-        this.hpTickTimer = data.hpTickTimer;
-        this.finalBossRound = data.finalBossRound;
-        this.defeated = data.defeated;
-
-        // Rebuild security level and spawn system from restored player state
-        this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
-        this.spawnSystem.setSecurityLevel(this.securityLevel);
-
-        // Rebuild the grid entities
-        this.clearGrid();
-        for (const entityData of data.entities) {
-            const cell = this.grid.getCell(entityData.x, entityData.y);
-            if (!cell) continue;
-            const virus = this.createVirusFromData(entityData);
-            if (virus) {
-                cell.placeEntity(virus);
-                eventBus.emit("entitySpawned", { cell, entity: virus });
-            }
-        }
-
-        // Re-sync the shop upgrade levels (Shop restores levels from PlayerState on construction,
-        // but the shop already exists here, so force-sync the upgrade levels)
-        this.shop.getUpgrades().forEach(upgrade => {
-            const savedLevel = this.playerState.getUpgradeLevel(upgrade.id);
-            while (upgrade.getLevel() < savedLevel) {
-                upgrade.forceLevelUp();
-            }
-        });
-
-        eventBus.emit("phaseChanged", this.phase);
-        eventBus.emit("timerChanged", this.getRemainingTime());
-        eventBus.emit("creditsChanged", this.playerState.getCredits());
-        eventBus.emit("damageChanged", this.playerState.getDamageNumber());
-        eventBus.emit("hpChanged", this.playerState.getHp());
-        eventBus.emit("tickIntervalChanged", this.playerState.getTickInterval());
-        eventBus.emit("selectionChanged", undefined);
-    }
-
-    public resetToNewGame(): void {
-        this.playerState.deserialize({
-            credits: 0,
-            securityLevel: 1,
-            damage: 20,
-            tickInterval: 30,
-            creditBonus: 0,
-            damageMultiplier: 1,
-            chainChance: 0,
-            upgradeLevels: {},
-            hp: 1000,
-            maxHp: 1000,
-            overdriveTimer: 0,
-            firewallTimer: 0,
-        });
-        this.selectionRect.deserialize({ x: 0, y: 0, width: 1, height: 1 });
-        this.phase = GamePhase.READY;
-        this.timer = 0;
-        this.damageTickTimer = 0;
-        this.virusTickTimer = 0;
-        this.bossAttackTimer = 0;
-        this.hpTickTimer = 0;
-        this.finalBossRound = false;
-        this.defeated = false;
-
-        this.securityLevel = getSecurityLevel(this.playerState.getSecurityLevel());
-        this.spawnSystem.setSecurityLevel(this.securityLevel);
-        this.abilitySystem.resetCooldowns();
-        this.clearGrid();
-
-        // Reset shop upgrade levels
-        this.shop.getUpgrades().forEach(upgrade => {
-            upgrade.resetLevel();
-        });
-
-        eventBus.emit("phaseChanged", this.phase);
-        eventBus.emit("timerChanged", this.getRemainingTime());
-        eventBus.emit("creditsChanged", this.playerState.getCredits());
-        eventBus.emit("damageChanged", this.playerState.getDamageNumber());
-        eventBus.emit("hpChanged", this.playerState.getHp());
-        eventBus.emit("tickIntervalChanged", this.playerState.getTickInterval());
-        eventBus.emit("selectionChanged", undefined);
-    }
-
-    private createVirusFromData(data: EntitySaveData): Virus | null {
-        let virus: Virus;
-        switch (data.type) {
-            case "BasicVirus":
-                virus = new BasicVirus();
-                break;
-            case "FastVirus":
-                virus = new FastVirus();
-                break;
-            case "ArmoredVirus":
-                virus = new ArmoredVirus();
-                break;
-            case "ExplosiveVirus":
-                virus = new ExplosiveVirus();
-                break;
-            case "HealerVirus":
-                virus = new HealerVirus();
-                break;
-            case "SpreaderVirus":
-                virus = new SpreaderVirus();
-                break;
-            case "SplitterVirus":
-                virus = new SplitterVirus();
-                break;
-            case "ShielderVirus":
-                virus = new ShielderVirus();
-                break;
-            case "LeechVirus":
-                virus = new LeechVirus();
-                break;
-            case "BossVirus":
-                virus = new BossVirus();
-                break;
-            default:
-                // Fallback: reconstruct a generic Virus with saved properties
-                virus = new Virus(data.name, data.health, data.damagePerClick, data.reward, data.graphic);
-                virus.explodesOnDestroy = data.explodesOnDestroy;
-                virus.healsAdjacent = data.healsAdjacent;
-                virus.splitsOnDeath = data.splitsOnDeath;
-                virus.shieldsAdjacent = data.shieldsAdjacent;
-                virus.leech = data.leech;
-                virus.spreads = data.spreads;
-                virus.isBoss = data.isBoss;
-                virus.armor = data.armor;
-                virus.setSpreadCooldown(data.spreadCooldown);
-                return virus;
-        }
-
-        // Restore runtime state for known virus types
-        virus.health = data.health;
-        virus.reward = data.reward;
-        virus.armor = data.armor;
-        virus.setSpreadCooldown(data.spreadCooldown);
-        return virus;
-    }
+    if (virus.boss) this.player.seen.add(virus.kind);
+    this.bus.emit('virusSpawned', { cell, virus });
+  }
+
+  hurtPlayer(amount: number, cell?: Cell, heavy = false): void {
+    if (amount <= 0 || this.phase !== 'wave') return;
+    this.player.hp -= amount;
+    this.damageTaken += amount;
+    this.bus.emit('playerHit', { amount, cell, heavy });
+  }
+
+  log(text: string, kind: LogKind = 'info'): void {
+    this.bus.emit('log', { text, kind });
+  }
+
+  // ── Persistence ──────────────────────────────────────────
+
+  save(): void {
+    this.saveTimer = 0;
+    if (this.persist) this.storage.write(this.player.toSave());
+  }
+
+  /** Load from storage (or a decoded import). Returns false if the data is unusable. */
+  load(raw: unknown = this.storage.read()): boolean {
+    if (!this.player.fromSave(raw)) return false;
+    this.resetBoard();
+    this.phase = 'intermission';
+    this.lastResult = 'none';
+    this.autoStartTimer = AUTO_START_DELAY;
+    this.bus.emit('stateReset', undefined);
+    return true;
+  }
+
+  hardReset(): void {
+    this.storage.clear();
+    this.player.reset();
+    this.resetBoard();
+    this.phase = 'intermission';
+    this.lastResult = 'none';
+    this.bus.emit('stateReset', undefined);
+    this.log('All data wiped. Fresh install.', 'system');
+  }
 }

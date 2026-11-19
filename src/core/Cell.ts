@@ -1,27 +1,22 @@
-import type { Entity } from "../entities/Entity";
+import type { Virus } from '../entities/Virus';
 
-/**
- * Cell data
- * @param x
- * @param y
- */
+/** A clickable data packet. Only clicks collect it — the daemon ignores packets. */
+export interface Pickup {
+  value: number;
+  ttl: number;
+}
+
 export class Cell {
-    constructor(
-        public readonly x: number,
-        public readonly y: number,
-    ) {}
+  virus?: Virus;
+  pickup?: Pickup;
 
-    public entity?: Entity;
+  constructor(
+    readonly x: number,
+    readonly y: number,
+    readonly index: number,
+  ) {}
 
-    public placeEntity(entity: Entity): void {
-        this.entity = entity;
-    }
-
-    public removeEntity(): void {
-        this.entity = undefined;
-    }
-
-    public hasEntity(): boolean {
-        return this.entity !== undefined;
-    }
+  get isEmpty(): boolean {
+    return this.virus === undefined && this.pickup === undefined;
+  }
 }

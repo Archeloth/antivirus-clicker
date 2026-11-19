@@ -1,51 +1,67 @@
-import { getRandomInt } from "../utils/random";
-import { Cell } from "./Cell";
+import { pick } from '../utils/random';
+import { Cell } from './Cell';
 
-/**
- * Abstraction of the playable grid
- * @param width
- * @param height
- */
+const OFFSETS: readonly (readonly [number, number])[] = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+];
+
 export class Grid {
-    public readonly width: number;
-    public readonly height: number;
+  readonly cells: readonly Cell[];
+  private readonly neighborCache: readonly (readonly Cell[])[];
 
-    private readonly cells: Cell[] = [];
-
-    constructor(width: number, height: number) {
-        this.width = width;
-        this.height = height;
-
-        this.createCells();
+  constructor(
+    readonly width: number,
+    readonly height: number,
+  ) {
+    const cells: Cell[] = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        cells.push(new Cell(x, y, y * width + x));
+      }
     }
+    this.cells = cells;
+    this.neighborCache = cells.map((cell) =>
+      OFFSETS.map(([dx, dy]) => this.get(cell.x + dx, cell.y + dy)).filter(
+        (n): n is Cell => n !== undefined,
+      ),
+    );
+  }
 
-    public forEachCells(callback: (cell: Cell) => void): void {
+  get(x: number, y: number): Cell | undefined {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return undefined;
+    return this.cells[y * this.width + x];
+  }
 
-        this.cells.forEach(callback);
+  /** Orthogonal neighbors (cached). */
+  neighbors(cell: Cell): readonly Cell[] {
+    return this.neighborCache[cell.index] ?? [];
+  }
 
+  randomEmpty(): Cell | undefined {
+    return pick(this.cells.filter((cell) => cell.isEmpty));
+  }
+
+  randomEmptyNeighbor(cell: Cell): Cell | undefined {
+    return pick(this.neighbors(cell).filter((n) => n.isEmpty));
+  }
+
+  countViruses(): number {
+    let count = 0;
+    for (const cell of this.cells) if (cell.virus) count++;
+    return count;
+  }
+
+  findVirusCell(virusId: number): Cell | undefined {
+    return this.cells.find((cell) => cell.virus?.id === virusId);
+  }
+
+  clear(): void {
+    for (const cell of this.cells) {
+      cell.virus = undefined;
+      cell.pickup = undefined;
     }
-
-    private createCells(): void {
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                this.cells.push(new Cell(x, y));
-            }
-        }
-    }
-
-    public getCell(x: number, y: number): Cell | undefined {
-        return this.cells.find(cell => cell.x === x && cell.y === y)
-    }
-
-    public getCellsSnapshot(): Cell[] {
-        return [...this.cells];
-    }
-
-    public getRandomEmptyCell(): Cell | undefined {
-        const emptyCells = this.cells.filter(cell => !cell.hasEntity());
-        if (emptyCells.length === 0) return undefined;
-
-        const randomIndex = getRandomInt(emptyCells.length);
-        return emptyCells[randomIndex];
-    }
+  }
 }

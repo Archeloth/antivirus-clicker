@@ -30,7 +30,12 @@ export class AbilitySystem {
   }
 
   cooldownFraction(ability: AbilityDef): number {
-    return this.cooldown(ability.id) / ability.cooldown;
+    return this.cooldown(ability.id) / this.maxCooldown(ability);
+  }
+
+  /** Cooldown after Async Scheduler reductions. */
+  maxCooldown(ability: AbilityDef): number {
+    return ability.cooldown * this.game.player.cooldownMult;
   }
 
   reset(): void {
@@ -50,7 +55,7 @@ export class AbilitySystem {
     if (this.game.phase !== 'wave' || this.game.paused) return false;
 
     this.activate(ability);
-    this.cooldowns.set(id, ability.cooldown);
+    this.cooldowns.set(id, this.maxCooldown(ability));
     this.game.bus.emit('abilityUsed', { id });
     return true;
   }

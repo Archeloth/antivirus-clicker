@@ -59,6 +59,7 @@ src/
     AbilitySystem.ts       cooldowns + effects
     PickupSystem.ts        click-only data packets
     AchievementSystem.ts   periodic checks
+    AutomationSystem.ts    Package Manager auto-buyer (Kernel Module)
   ui/                      DOM only; reads game state each frame, listens to game.bus for effects
     UI.ts                  layout (topbar / status | board | tabs), keyboard, per-frame render dispatch
     GridView.ts            cells (diffed), daemon overlay, input; owns Particles + Popups
@@ -91,7 +92,12 @@ scripts/sim.ts             headless balance bot (bundled with rolldown, run with
 
 **Abilities** (one-time unlocks gated by level): EMP Blast (25% max HP to all, 5% vs bosses) · Logic Bomb (10× click dmg, 3×3 at daemon) · Overdrive (×2 damage 8s) · Firewall (freeze threats 6s) · Crypto Miner (credits).
 
-**Prestige:** "Reinstall OS" from 10 cleared levels. Keys = `floor(3 · 1.18^(cleared−10))`, each +5% damage & credits. It resets credits, levels and upgrades, and keeps keys, achievements, stats and settings.
+**Prestige:** "Reinstall OS" from 10 cleared levels. Keys = `floor(3 · 1.18^(runBest−10))`, where `runBest` is the highest level actually **cleared this run**, so Fast Boot levels don't pay out (that would be an infinite-key exploit). The passive bonus is +5% damage & credits per **lifetime** key (`rootKeysTotal`), so spending keys never weakens you. Reinstalling resets credits, levels and upgrades, and keeps keys, modules, achievements, stats and settings.
+
+**Kernel Modules** (`data/modules.ts`, KERNEL tab, shown once keys exist): a permanent tree bought with spendable `rootKeys`.
+- Applied at run start (`PlayerState.startRun()`): Preinstalled Toolkit (abilities + Target Lock), Bootstrap Funds (seed credits) and Fast Boot (start at level 4/9/14).
+- Immediate: Hot Keys (+hack rate), Async Scheduler (−cooldowns), Package Manager (auto-buyer, `system/AutomationSystem.ts`, toggle in SYSTEM), Bounty Program (×boss credits) and Kernel Daemon (+1 WAN max, through `UPGRADE_MAX_BONUS`). Use `Game.upgradeMax(def)`, never `def.max` directly.
+- Costs are tuned so each reinstall unlocks roughly another third of the tree.
 
 **Balance snapshot** (sim, hold-to-hack, 0.3–1.0s reaction): L10 at about 5 min, L20 at about 11 min, L30 at about 15 min, and a first wall around L35–40 (prestige about 50–60 min, +~300 keys). Bosses are the main difficulty spikes, the Botnet (L10/L30) hardest.
 
@@ -102,7 +108,7 @@ scripts/sim.ts             headless balance bot (bundled with rolldown, run with
 ## 7. Known gaps / next steps
 
 - [ ] **Balance pass by a human.** The sim bot is a stand-in. Watch for: early L5 Rootkit difficulty for slow clickers, the Botnet spike, mid-levels (11–19) feeling easy between bosses, and late boss fights running long (60–80s at L35+).
-- [ ] Meta upgrade tree to spend root keys on (currently keys are a passive multiplier only).
+- [x] Meta upgrade tree to spend root keys on (Kernel Modules).
 - [ ] Offline progress (undecided).
 - [ ] Rebindable keys; gamepad (not planned).
 - [ ] Touch: daemon moves by tapping empty cells only. Consider a drag gesture.

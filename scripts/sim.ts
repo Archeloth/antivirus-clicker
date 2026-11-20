@@ -11,6 +11,7 @@ import { Game } from '../src/core/Game';
 import type { Cell } from '../src/core/Cell';
 import { STEP } from '../src/data/balance';
 import { isHackable } from '../src/system/HackSystem';
+import { MODULES } from '../src/data/modules';
 import { UPGRADES } from '../src/data/upgrades';
 import { fmt } from '../src/utils/format';
 
@@ -127,6 +128,21 @@ function shop(): void {
   }
 }
 
+/** Spend root keys on the cheapest Kernel Module levels (weighted toward run-start boosts). */
+const MODULE_PRIORITY: Record<string, number> = { toolkit: 0.5, funds: 0.6, fastboot: 0.7, hotkeys: 0.8, pkgmgr: 0.8 };
+function buyModules(): void {
+  for (let guard = 0; guard < 50; guard++) {
+    let best: { id: string; score: number } | undefined;
+    for (const def of MODULES) {
+      const cost = game.moduleCost(def);
+      if (cost === undefined || cost > game.player.rootKeys) continue;
+      const score = cost * (MODULE_PRIORITY[def.id] ?? 1);
+      if (!best || score < best.score) best = { id: def.id, score };
+    }
+    if (!best || !game.buyModule(best.id)) return;
+  }
+}
+
 const maxSteps = MAX_HOURS * 3600 / STEP;
 let step = 0;
 
@@ -146,7 +162,10 @@ while (step < maxSteps && game.player.highestLevel <= UNTIL_LEVEL) {
       lastHighest = 1;
       lastProgressAt = game.player.stats.playTime;
       prestiges.push(`prestige at L${game.player.highestLevel} +${game.prestigeGain} keys (t=${(game.player.stats.playTime / 60).toFixed(0)}m)`);
+      buyModules(); // run-start modules must be owned before reinstalling
       game.prestige();
+      buyModules();
+      prestiges.push(`  modules: ${JSON.stringify(Object.fromEntries(game.player.modules))} · keys left ${game.player.rootKeys}`);
       failStreak = 0;
     } else if (failStreak >= 3 && game.player.level > 1) {
       game.selectLevel(game.player.level - 1);

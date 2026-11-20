@@ -74,6 +74,7 @@ export class SystemTab {
       toggle('Damage numbers', () => s().damageNumbers, (v) => (s().damageNumbers = v)),
       toggle('Reduced motion', () => s().reducedMotion, (v) => (s().reducedMotion = v)),
       toggle('Auto-deploy next wave', () => s().autoStart, (v) => (s().autoStart = v)),
+      toggle('Package Manager auto-buy (Kernel module)', () => s().autoBuy, (v) => (s().autoBuy = v)),
     );
   }
 
@@ -131,7 +132,7 @@ export class SystemTab {
     const gain = game.prestigeGain;
     setText(
       this.prestigeInfo,
-      `Root keys: ${fmt(player.rootKeys)} (×${player.keyMult.toFixed(2)})\nReinstall now: +${fmt(gain)} keys`,
+      `Root keys: ${fmt(player.rootKeys)} to spend · ${fmt(player.rootKeysTotal)} earned (×${player.keyMult.toFixed(2)})\nReinstall now: +${fmt(gain)} keys (cleared this run: level ${player.runBest})\nSpend keys in the KERNEL tab.`,
     );
     setText(this.prestigeButton, gain > 0 ? `REINSTALL OS (+${fmt(gain)} keys)` : `Clear level ${PRESTIGE_UNLOCK} to unlock`);
     this.prestigeButton.disabled = gain <= 0 || game.phase === 'wave';

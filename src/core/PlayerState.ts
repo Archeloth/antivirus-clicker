@@ -3,6 +3,7 @@ import {
   BASE_MAX_HP,
   ROOT_KEY_BONUS,
 } from '../data/balance';
+import { ABILITY_IDS, MODULE_F } from '../data/modules';
 import { F } from '../data/upgrades';
 
 export interface Stats {
@@ -25,6 +26,8 @@ export interface Settings {
   reducedMotion: boolean;
   autoStart: boolean;
   buyMax: boolean;
+  /** Package Manager auto-buying (only active when the module is owned). */
+  autoBuy: boolean;
 }
 
 export const SAVE_VERSION = 3;
@@ -34,7 +37,10 @@ export interface SaveData {
   credits: number;
   level: number;
   highestLevel: number;
+  runBest: number;
   rootKeys: number;
+  rootKeysTotal: number;
+  modules: Record<string, number>;
   victory: boolean;
   upgrades: Record<string, number>;
   achievements: string[];
@@ -64,6 +70,7 @@ const DEFAULT_SETTINGS: Settings = {
   reducedMotion: false,
   autoStart: false,
   buyMax: false,
+  autoBuy: true,
 };
 
 /**
@@ -76,7 +83,14 @@ export class PlayerState {
   level = 1;
   /** Highest level unlocked (cleared + 1). */
   highestLevel = 1;
+  /** Highest level actually cleared this run (prestige payout; Fast Boot levels excluded). */
+  runBest = 0;
+  /** Spendable root keys (Kernel Modules). */
   rootKeys = 0;
+  /** Lifetime root keys earned: drives the passive bonus, never decreases. */
+  rootKeysTotal = 0;
+  /** Kernel Modules owned: survive prestige. */
+  modules = new Map<string, number>();
   victory = false;
   upgrades = new Map<string, number>();
   achievements = new Set<string>();
@@ -94,9 +108,27 @@ export class PlayerState {
     return this.upgrades.get(id) ?? 0;
   }
 
+  mod(id: string): number {
+    return this.modules.get(id) ?? 0;
+  }
+
   // ── Derived stats ────────────────────────────────────────
   get keyMult(): number {
-    return 1 + ROOT_KEY_BONUS * this.rootKeys;
+    return 1 + ROOT_KEY_BONUS * this.rootKeysTotal;
+  }
+
+  get cooldownMult(): number {
+    return MODULE_F.cooldownMult(this.mod('scheduler'));
+  }
+
+  get bossRewardMult(): number {
+    return MODULE_F.bossRewardMult(this.mod('bounty'));
+  }
+
+  /** Seconds between Package Manager purchases (0 = disabled). */
+  get autoBuyInterval(): number {
+    const l = this.mod('pkgmgr');
+    return l > 0 && this.settings.autoBuy ? MODULE_F.autoBuyInterval(l) : 0;
   }
 
   get damageMult(): number {
@@ -109,7 +141,7 @@ export class PlayerState {
 
   /** Hits per second while holding hack. */
   get hackRate(): number {
-    return F.hackRate(this.lvl('macro-keys'));
+    return F.hackRate(this.lvl('macro-keys')) + MODULE_F.hackRateBonus(this.mod('hotkeys'));
   }
 
   /** Maximum focus multiplier from staying on one target. */
@@ -201,12 +233,25 @@ export class PlayerState {
   /** "Reinstall OS": wipe the run, keep keys, achievements, lifetime stats, settings. */
   prestige(keysGained: number): void {
     this.rootKeys += keysGained;
-    this.credits = 0;
-    this.level = 1;
-    this.highestLevel = 1;
+    this.rootKeysTotal += keysGained;
     this.victory = false;
-    this.upgrades.clear();
     this.stats.prestiges++;
+    this.startRun();
+  }
+
+  /** Fresh run state, with run-start Kernel Modules applied. */
+  startRun(): void {
+    this.upgrades.clear();
+    this.credits = MODULE_F.startCredits(this.mod('funds'));
+    this.highestLevel = MODULE_F.startLevel(this.mod('fastboot'));
+    this.level = this.highestLevel;
+    this.runBest = 0;
+    const toolkit = this.mod('toolkit');
+    if (toolkit > 0) {
+      this.upgrades.set('target-lock', 1);
+      const abilities = toolkit >= 2 ? ABILITY_IDS : ABILITY_IDS.slice(0, 2);
+      for (const id of abilities) this.upgrades.set(id, 1);
+    }
     this.clearBuffs();
     this.restoreHp();
   }
@@ -218,7 +263,10 @@ export class PlayerState {
       credits: this.credits,
       level: this.level,
       highestLevel: this.highestLevel,
+      runBest: this.runBest,
       rootKeys: this.rootKeys,
+      rootKeysTotal: this.rootKeysTotal,
+      modules: Object.fromEntries(this.modules),
       victory: this.victory,
       upgrades: Object.fromEntries(this.upgrades),
       achievements: [...this.achievements],
@@ -251,10 +299,16 @@ export class PlayerState {
     this.credits = num(save.credits, 0);
     this.highestLevel = Math.max(1, Math.floor(num(save.highestLevel, 1)));
     this.level = clamp(Math.floor(num(save.level, 1)), 1, this.highestLevel);
+    this.runBest = Math.max(0, Math.floor(num(save.runBest, this.highestLevel - 1)));
     this.rootKeys = Math.max(0, Math.floor(num(save.rootKeys, 0)));
+    // Saves before Kernel Modules had no lifetime total: every key was unspent.
+    this.rootKeysTotal = Math.max(this.rootKeys, Math.floor(num(save.rootKeysTotal, this.rootKeys)));
     this.victory = save.victory === true;
     for (const [id, level] of Object.entries(save.upgrades ?? {})) {
       if (typeof level === 'number' && level > 0) this.upgrades.set(id, Math.floor(level));
+    }
+    for (const [id, level] of Object.entries(save.modules ?? {})) {
+      if (typeof level === 'number' && level > 0) this.modules.set(id, Math.floor(level));
     }
     this.achievements = new Set((save.achievements ?? []).filter((s) => typeof s === 'string'));
     this.seen = new Set((save.seen ?? []).filter((s) => typeof s === 'string'));
@@ -268,7 +322,10 @@ export class PlayerState {
     this.credits = 0;
     this.level = 1;
     this.highestLevel = 1;
+    this.runBest = 0;
     this.rootKeys = 0;
+    this.rootKeysTotal = 0;
+    this.modules.clear();
     this.victory = false;
     this.upgrades.clear();
     this.achievements.clear();

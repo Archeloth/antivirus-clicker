@@ -111,7 +111,7 @@ export class StatusPanel {
     setText(s.get('auto')!, player.heuristicInterval > 0 ? `${player.heuristicInterval.toFixed(1)}s` : 'off');
     setText(s.get('chain')!, fmtPct(player.chainChance));
     setText(s.get('regen')!, `${fmt(player.regenPerSecond)}/s`);
-    setText(s.get('keys')!, player.rootKeys > 0 ? `${fmt(player.rootKeys)} (×${player.keyMult.toFixed(2)})` : '0');
+    setText(s.get('keys')!, player.rootKeysTotal > 0 ? `${fmt(player.rootKeys)} (×${player.keyMult.toFixed(2)})` : '0');
 
     const buffs: string[] = [];
     if (player.overdrive > 0) buffs.push(`OVERDRIVE ×2  ${fmtSeconds(player.overdrive)}`);

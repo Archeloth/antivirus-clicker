@@ -1,6 +1,7 @@
 import type { Game } from '../core/Game';
 import { h, setClass, setText } from './dom';
 import { GridView } from './GridView';
+import { KernelTab } from './KernelTab';
 import { LogPanel } from './LogPanel';
 import { Overlay } from './Overlay';
 import { Sfx } from './Sfx';
@@ -11,7 +12,7 @@ import { ThreatTab } from './ThreatTab';
 import { Toasts } from './Toasts';
 import { WaveBar } from './WaveBar';
 
-type TabId = 'shop' | 'threats' | 'system';
+type TabId = 'shop' | 'kernel' | 'threats' | 'system';
 
 const MOVE_KEYS: Record<string, [number, number]> = {
   ArrowUp: [0, -1],
@@ -34,6 +35,7 @@ export class UI {
   private readonly waveBar: WaveBar;
   private readonly overlay: Overlay;
   private readonly shop: ShopTab;
+  private readonly kernel: KernelTab;
   private readonly threats: ThreatTab;
   private readonly system: SystemTab;
   private readonly tabButtons = new Map<TabId, HTMLButtonElement>();
@@ -53,6 +55,7 @@ export class UI {
     this.waveBar = new WaveBar(game);
     this.overlay = new Overlay(game, this.grid.overlayHost, () => this.setTab('system'));
     this.shop = new ShopTab(game);
+    this.kernel = new KernelTab(game);
     this.threats = new ThreatTab(game);
     this.system = new SystemTab(game);
     const log = new LogPanel(game);
@@ -73,6 +76,7 @@ export class UI {
     const bodies = h('div', { class: 'tab-bodies' });
     for (const [id, label, body] of [
       ['shop', 'UPGRADES', this.shop.root],
+      ['kernel', 'KERNEL', this.kernel.root],
       ['threats', 'THREAT DB', this.threats.root],
       ['system', 'SYSTEM', this.system.root],
     ] as const) {
@@ -199,7 +203,13 @@ export class UI {
     this.grid.render(dt);
     this.overlay.render();
     this.status.render();
+    // KERNEL tab appears once the first prestige has earned root keys.
+    const kernelButton = this.tabButtons.get('kernel');
+    if (kernelButton) kernelButton.hidden = game.player.rootKeysTotal <= 0;
+    if (this.activeTab === 'kernel' && kernelButton?.hidden) this.setTab('shop');
+
     if (this.activeTab === 'shop') this.shop.render();
+    else if (this.activeTab === 'kernel') this.kernel.render();
     else if (this.activeTab === 'threats') this.threats.render();
     else this.system.render(dt);
   }

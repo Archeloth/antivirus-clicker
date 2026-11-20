@@ -7,11 +7,13 @@ import {
   rootKeysFor,
   waveClearBonus,
 } from '../data/balance';
+import { MODULE_BY_ID, UPGRADE_MAX_BONUS, type ModuleDef } from '../data/modules';
 import { UPGRADE_BY_ID, upgradeCost, type UpgradeDef } from '../data/upgrades';
 import { VIRUS_BY_ID } from '../data/viruses';
 import type { Virus } from '../entities/Virus';
 import { AbilitySystem } from '../system/AbilitySystem';
 import { AchievementSystem } from '../system/AchievementSystem';
+import { AutomationSystem } from '../system/AutomationSystem';
 import { BossSystem } from '../system/BossSystem';
 import { CombatSystem } from '../system/CombatSystem';
 import { DaemonSystem } from '../system/DaemonSystem';
@@ -52,6 +54,7 @@ export class Game {
   readonly abilities = new AbilitySystem(this);
   readonly pickups = new PickupSystem(this);
   readonly achievements = new AchievementSystem(this);
+  readonly automation = new AutomationSystem(this);
 
   phase: Phase = 'intermission';
   paused = false;
@@ -71,6 +74,7 @@ export class Game {
     player.stats.playTime += dt;
     this.abilities.update(dt);
     this.achievements.update(dt);
+    this.automation.update(dt);
 
     if (this.phase === 'wave') {
       player.tickBuffs(dt);
@@ -115,6 +119,7 @@ export class Game {
     player.addCredits(bonus);
     if (this.damageTaken === 0 && level >= 3) player.stats.flawlessWaves++;
     if (level >= player.highestLevel) player.highestLevel = level + 1;
+    player.runBest = Math.max(player.runBest, level);
     player.level = Math.min(level + 1, player.highestLevel);
 
     this.resetBoard();
@@ -233,8 +238,16 @@ export class Game {
     return undefined;
   }
 
+  /** Max level including Kernel Module bonuses (undefined = uncapped). */
+  upgradeMax(def: UpgradeDef): number | undefined {
+    if (def.max === undefined) return undefined;
+    const bonusModule = UPGRADE_MAX_BONUS[def.id];
+    return def.max + (bonusModule ? this.player.mod(bonusModule) : 0);
+  }
+
   upgradeMaxed(def: UpgradeDef): boolean {
-    return def.max !== undefined && this.player.lvl(def.id) >= def.max;
+    const max = this.upgradeMax(def);
+    return max !== undefined && this.player.lvl(def.id) >= max;
   }
 
   /** Cost and number of levels a purchase would buy (honoring buy-max mode). */
@@ -243,11 +256,12 @@ export class Game {
     const start = player.lvl(def.id);
     const first = upgradeCost(def, start);
     if (!player.settings.buyMax) return { cost: first, count: 1 };
+    const max = this.upgradeMax(def);
     let cost = 0;
     let count = 0;
     while (count < 500) {
       const level = start + count;
-      if (def.max !== undefined && level >= def.max) break;
+      if (max !== undefined && level >= max) break;
       const next = upgradeCost(def, level);
       if (cost + next > player.credits) break;
       cost += next;
@@ -273,8 +287,30 @@ export class Game {
 
   // ── Prestige ─────────────────────────────────────────────
 
+  /** Keys are earned only for levels actually cleared this run (Fast Boot levels don't count). */
   get prestigeGain(): number {
-    return rootKeysFor(this.player.highestLevel - 1);
+    return rootKeysFor(this.player.runBest);
+  }
+
+  // ── Kernel Modules (root-key meta tree) ──────────────────
+
+  /** Key cost of the next module level, or undefined when maxed. */
+  moduleCost(def: ModuleDef): number | undefined {
+    return def.costs[this.player.mod(def.id)];
+  }
+
+  buyModule(id: string): boolean {
+    const def = MODULE_BY_ID.get(id);
+    if (!def) return false;
+    const cost = this.moduleCost(def);
+    if (cost === undefined || this.player.rootKeys < cost) return false;
+    this.player.rootKeys -= cost;
+    const level = this.player.mod(id) + 1;
+    this.player.modules.set(id, level);
+    this.bus.emit('purchased', { id, level });
+    this.log(`Kernel module loaded: ${def.name} Lv ${level}${def.runStart ? ' (applies next run)' : ''}.`, 'system');
+    this.save();
+    return true;
   }
 
   prestige(): boolean {

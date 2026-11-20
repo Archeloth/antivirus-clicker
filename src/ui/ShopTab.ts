@@ -88,7 +88,8 @@ export class ShopTab {
       }
 
       if (this.cache.changed(row.root, 'state', state)) row.root.className = `upg ${state}`;
-      setText(row.level, def.max === 1 ? '' : `Lv ${lvl}${def.max ? `/${def.max}` : ''}`);
+      const max = game.upgradeMax(def);
+      setText(row.level, max === 1 ? '' : `Lv ${lvl}${max ? `/${max}` : ''}`);
       setText(row.effect, effect);
       setText(row.cost, cost);
     }

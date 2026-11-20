@@ -36,7 +36,9 @@ export class Virus {
   /** Trojan still pretending to be a data packet. */
   disguised = false;
   disguiseTimer = 0;
-  /** Rootkit-style: cannot be damaged until revealed by the daemon. */
+  /** Can hide: re-cloaks whenever the daemon hasn't swept it recently (Rootkit, Stealth waves). */
+  cloaked = false;
+  /** Currently hidden: cannot be damaged until revealed by the daemon. */
   hidden = false;
   revealTimer = 0;
   immune: Immunity = 'none';

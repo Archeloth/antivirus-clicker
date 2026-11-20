@@ -25,7 +25,7 @@ export class PickupSystem {
     this.timer -= 1;
 
     const { player } = this.game;
-    if (!chance(BASE_CHANCE_PER_SECOND * player.packetBonus)) return;
+    if (!chance(BASE_CHANCE_PER_SECOND * player.packetBonus * this.game.waves.packetMult)) return;
     const cell = this.game.grid.randomEmpty();
     if (!cell) return;
     cell.pickup = {

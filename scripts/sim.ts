@@ -45,6 +45,18 @@ let lastProgressAt = 0;
 let lastHighest = 1;
 let waveTime = 0;
 
+/** Modifier of the wave in progress, and clear/fail counts per modifier. */
+let currentMod = '';
+const modStats = new Map<string, { cleared: number; failed: number }>();
+function countMod(result: 'cleared' | 'failed'): void {
+  if (!currentMod) return;
+  const entry = modStats.get(currentMod) ?? { cleared: 0, failed: 0 };
+  entry[result]++;
+  modStats.set(currentMod, entry);
+}
+game.bus.on('waveFailed', () => countMod('failed'));
+game.bus.on('waveCleared', () => countMod('cleared'));
+
 game.bus.on('waveFailed', ({ level }) => {
   const row = rows.get(level);
   if (row) row.attempts++;
@@ -175,6 +187,7 @@ while (step < maxSteps && game.player.highestLevel <= UNTIL_LEVEL) {
     }
     waveTime = 0;
     game.startWave();
+    currentMod = game.waves.modifier?.id ?? '';
   }
 
   waveTime += STEP;
@@ -208,6 +221,7 @@ for (const row of [...rows.values()].sort((a, b) => a.level - b.level)) {
   );
 }
 for (const p of prestiges) console.log(p);
+console.log('modifiers (cleared/failed):', [...modStats].map(([id, m]) => `${id} ${m.cleared}/${m.failed}`).join(', ') || 'none');
 const p = game.player;
 console.log(`highest=${p.highestLevel} keys=${p.rootKeys} kills=${p.stats.kills} achievements=${p.achievements.size}`);
 console.log('upgrades:', JSON.stringify(Object.fromEntries(p.upgrades)));

@@ -14,6 +14,7 @@ export interface Stats {
   creditsEarned: number;
   bossesKilled: number;
   flawlessWaves: number;
+  modifiedWaves: number;
   trojansCaught: number;
   prestiges: number;
   playTime: number;
@@ -58,6 +59,7 @@ const DEFAULT_STATS: Stats = {
   creditsEarned: 0,
   bossesKilled: 0,
   flawlessWaves: 0,
+  modifiedWaves: 0,
   trojansCaught: 0,
   prestiges: 0,
   playTime: 0,

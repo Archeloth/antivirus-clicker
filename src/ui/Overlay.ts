@@ -1,6 +1,7 @@
 import type { Game } from '../core/Game';
 import { isBossLevel } from '../data/balance';
 import { bossForLevel, VIRUSES } from '../data/viruses';
+import { WaveSystem } from '../system/WaveSystem';
 import { h } from './dom';
 
 /**
@@ -20,7 +21,7 @@ export class Overlay {
     const { game } = this;
     const { phase, paused, player, lastResult } = game;
     const countdown = player.settings.autoStart ? Math.ceil(game.autoStartTimer) : -1;
-    const key = `${phase}|${paused}|${player.level}|${player.highestLevel}|${lastResult}|${countdown}`;
+    const key = `${phase}|${paused}|${player.level}|${player.highestLevel}|${lastResult}|${countdown}|${game.nextModifier?.id}`;
     if (key === this.key) return;
     this.key = key;
 
@@ -66,6 +67,18 @@ export class Overlay {
     if (isBossLevel(level)) {
       const boss = bossForLevel(level);
       lines.push(h('div', { class: 'overlay-boss' }, h('b', { text: `⚠ BOSS: ${boss.name}` }), h('div', { text: boss.description })));
+    }
+    const modifier = game.nextModifier;
+    if (modifier && WaveSystem.eligible(level)) {
+      lines.push(
+        h(
+          'div',
+          { class: 'overlay-mod' },
+          h('b', { text: `⚡ MODIFIER: ${modifier.name}` }),
+          h('span', { class: 'overlay-mod-reward', text: ` credits ×${modifier.reward}` }),
+          h('div', { text: modifier.description }),
+        ),
+      );
     }
     const fresh = VIRUSES.filter((v) => v.minLevel === level && v.weight > 0);
     for (const v of fresh) {

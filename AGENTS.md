@@ -1,7 +1,7 @@
 # antivirus.exe: Project Context
 
 > Context file for agents working on this repo. Read this first.
-> Last updated: 2026-11-19 (v0.2 "overhaul"). Keep it current when the design or architecture changes.
+> Last updated: 2026-11-20 (v0.3: keyboard controls, Kernel Modules, wave modifiers). Keep it current when the design or architecture changes.
 
 ## 1. Pitch & pillars
 
@@ -51,10 +51,10 @@ src/
   entities/Virus.ts        plain state object + createVirus/createBoss (applies level scaling)
   system/                  game logic; each system gets the Game in its constructor
     CombatSystem.ts        THE ONLY place damage/kills happen (shield, armor, immunity, rewards, death effects, chain)
-    WaveSystem.ts          spawn budget per wave, weighted pick by level, cleared check
+    WaveSystem.ts          spawn budget per wave, weighted pick by level, wave modifiers, cleared check
     VirusBehaviorSystem.ts per-second attacks + traits (hop/heal/spread/encrypt/drain/trojan fuse)
     BossSystem.ts          boss attacks/slams + gimmicks (rootkit/botnet/polymorph/zeroday)
-    DaemonSystem.ts        zone position, tick damage, Heuristic auto-targeting
+    DaemonSystem.ts        zone position, tick damage, reveals `cloaked` threats it sweeps, Heuristic auto-targeting
     HackSystem.ts          cursor, hold-to-hack rate limiting, focus ramp, Tab cycling, Target Lock priority
     AbilitySystem.ts       cooldowns + effects
     PickupSystem.ts        click-only data packets
@@ -88,7 +88,7 @@ scripts/sim.ts             headless balance bot (bundled with rolldown, run with
 
 **Threats** (first level in parentheses): Bug (1) · Byte Bug, hops (2) · Syntax Error, flat armor (3) · Null Pointer, explodes 30% max HP into neighbors (4) · Patch Bot, heals neighbors (6) · Worm, replicates (7) · Fork Bomb, splits (8) · Trojan, disguised as a packet: click it before its 5s fuse for double credits (9) · Obfuscator, neighbors take −60% damage (11) · Vampire Bug, drains credits and refunds 150% on kill (12) · Ransomware, encrypts neighbors so they're immune to the daemon but clickable (13). Children and copies are generation 1 and lose their trait.
 
-**Bosses** (every 5 levels, cycling after 20): **Rootkit** hides and can only be damaged after the daemon sweeps over it; it burrows every 7s. **Botnet** core is immune while nodes live; killing all nodes exposes it for 12s, then all nodes reconnect. **Polymorphic Engine** alternates click/daemon immunity every 6s and spawns minions. **Zero-Day** (L20) runs rootkit, then botnet, then polymorph phases by HP; beating it shows the victory screen (endless continues). Killing a boss purges the rest of the wave.
+**Bosses** (every 5 levels, cycling after 20): **Rootkit** is `cloaked` and can only be damaged after the daemon sweeps over it; it burrows every 7s. **Botnet** core is immune while nodes live; killing all nodes exposes it for 12s, then all nodes reconnect. **Polymorphic Engine** alternates hack/daemon immunity every 6s and spawns minions. **Zero-Day** (L20) runs rootkit, then botnet, then polymorph phases by HP; beating it shows the victory screen (endless continues). Killing a boss purges the rest of the wave.
 
 **Abilities** (one-time unlocks gated by level): EMP Blast (25% max HP to all, 5% vs bosses) · Logic Bomb (10× click dmg, 3×3 at daemon) · Overdrive (×2 damage 8s) · Firewall (freeze threats 6s) · Crypto Miner (credits).
 
@@ -105,9 +105,22 @@ scripts/sim.ts             headless balance bot (bundled with rolldown, run with
 
 `localStorage['antivirus-clicker-save']` = `PlayerState.toSave()` (`v: 3`). `fromSave()` validates every field. It migrates v2 by renaming `stats.clicks` → `hacks` and achievement `clicks-1000` → `hacks-1000`, and v1 (pre-overhaul) saves by keeping credits + level. Bump `SAVE_VERSION` and add a migration branch for breaking changes. Export/import uses base64(URI-encoded JSON).
 
+**Wave modifiers** (`data/modifiers.ts`): from level 12, each non-boss wave has a 35% chance of a modifier.
+- **Rolling:** `Game.rollModifier()` rolls it on every return to intermission (and on load, prestige and reset). It is shown in the briefing, applied on deploy only if the chosen level is eligible, and shown on the wave bar during play.
+- **Effects:** `WaveSystem.applyModifier()` runs from `Game.spawnVirus`, so copies and children are affected too. The reward multiplier applies to kill credits and the clear bonus.
+- **The modifiers:**
+  - DDoS: more threats, faster.
+  - Encrypted Payload: all threats are hack-only (`encryptedBy = WAVE_ENCRYPTION`).
+  - Stealth Mode: all threats are `cloaked`.
+  - Lag Spike: the daemon ticks at half speed.
+  - Hardened Binaries: +armor.
+  - Swarm: 2× count at ½ HP.
+  - Packet Storm: 3× packets.
+- **Cloaking** is general: any virus with `cloaked = true` is hidden unless the daemon covered it within the last 2.5s (`DaemonSystem.reveal`). Heuristic Scan sweeps toward cloaked minions but never toward a hidden boss.
+
 ## 7. Known gaps / next steps
 
-- [ ] **Balance pass by a human.** The sim bot is a stand-in. Watch for: early L5 Rootkit difficulty for slow clickers, the Botnet spike, mid-levels (11–19) feeling easy between bosses, and late boss fights running long (60–80s at L35+).
+- [ ] **Balance pass by a human.** The sim bot is a stand-in. Watch for: early L5 Rootkit difficulty, modifier fairness (DDoS and Hardened fail most in the sim), the Botnet spike, mid-levels (11–19) feeling easy between bosses, and late boss fights running long (60–80s at L35+).
 - [x] Meta upgrade tree to spend root keys on (Kernel Modules).
 - [ ] Offline progress (undecided).
 - [ ] Rebindable keys; gamepad (not planned).

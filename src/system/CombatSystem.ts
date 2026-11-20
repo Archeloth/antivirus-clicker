@@ -50,7 +50,8 @@ export class CombatSystem {
     virus.hp = 0;
 
     const credits =
-      virus.reward * player.creditMult * bonusMult * (virus.boss ? player.bossRewardMult : 1) +
+      virus.reward * player.creditMult * bonusMult * this.game.waves.rewardMult *
+        (virus.boss ? player.bossRewardMult : 1) +
       virus.stolen * VAMPIRE_REFUND;
     player.addCredits(credits);
     player.stats.kills++;

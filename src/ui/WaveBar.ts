@@ -34,7 +34,11 @@ export class WaveBar {
     const { phase, waves, grid, bosses, player } = this.game;
     const inWave = phase === 'wave';
     const level = inWave ? waves.level : player.level;
-    setText(this.title, `WAVE ${level}${isBossLevel(level) ? '  ⚠ BOSS' : ''}`);
+    const modifier = inWave ? waves.modifier : undefined;
+    setText(
+      this.title,
+      `WAVE ${level}${isBossLevel(level) ? '  ⚠ BOSS' : ''}${modifier ? `  ⚡ ${modifier.name.toUpperCase()} ×${modifier.reward}` : ''}`,
+    );
 
     if (inWave) {
       const active = grid.countViruses();

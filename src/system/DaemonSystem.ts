@@ -2,6 +2,8 @@ import type { Cell } from '../core/Cell';
 import type { Game } from '../core/Game';
 
 const MANUAL_OVERRIDE = 3;
+/** Seconds a cloaked threat stays visible after the daemon leaves it. */
+const REVEAL_TIME = 2.5;
 
 /**
  * The scan daemon: a square zone that auto-damages everything inside it on a
@@ -20,9 +22,31 @@ export class DaemonSystem {
     return this.game.player.daemonSize;
   }
 
+  /** Seconds between ticks, including wave modifiers (Lag Spike). */
+  get interval(): number {
+    return this.game.player.daemonInterval * this.game.waves.daemonIntervalMult;
+  }
+
   /** Fraction of the current tick elapsed (for UI pulse). */
   get tickProgress(): number {
-    return Math.min(1, this.tickTimer / this.game.player.daemonInterval);
+    return Math.min(1, this.tickTimer / this.interval);
+  }
+
+  /**
+   * Cloaked threats (Rootkit, Stealth waves) become visible while the zone
+   * covers them and for REVEAL_TIME seconds after; then they hide again.
+   */
+  private reveal(dt: number): void {
+    for (const cell of this.game.grid.cells) {
+      const v = cell.virus;
+      if (!v?.cloaked) continue;
+      if (this.contains(cell)) {
+        if (v.boss && v.revealTimer <= 0) this.game.log(`${v.name} exposed at its hiding spot!`, 'warn');
+        v.revealTimer = REVEAL_TIME;
+      }
+      v.revealTimer = Math.max(0, v.revealTimer - dt);
+      v.hidden = v.revealTimer <= 0;
+    }
   }
 
   contains(cell: Cell): boolean {
@@ -61,9 +85,10 @@ export class DaemonSystem {
   update(dt: number): void {
     this.clamp();
     const { player } = this.game;
+    this.reveal(dt);
 
     this.tickTimer += dt;
-    const interval = player.daemonInterval;
+    const interval = this.interval;
     if (this.tickTimer >= interval) {
       this.tickTimer -= interval;
       this.fire(player.daemonDamage);
@@ -105,9 +130,11 @@ export class DaemonSystem {
         for (let y = oy; y < oy + s; y++) {
           for (let x = ox; x < ox + s; x++) {
             const v = grid.get(x, y)?.virus;
-            if (!v || v.disguised || v.hidden || v.encryptedBy !== 0) continue;
+            if (!v || v.disguised || v.encryptedBy !== 0) continue;
             if (v.immune === 'all' || v.immune === 'daemon') continue;
-            score += 1 + v.hpFraction;
+            // Sweeping reveals cloaked minions (Stealth waves); a hidden boss is the player's job.
+            if (v.hidden) score += v.boss ? 0 : 1;
+            else score += 1 + v.hpFraction;
           }
         }
         if (score > bestScore) {

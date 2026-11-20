@@ -7,6 +7,7 @@ import {
   rootKeysFor,
   waveClearBonus,
 } from '../data/balance';
+import { MODIFIER_CHANCE, MODIFIERS, type ModifierDef } from '../data/modifiers';
 import { MODULE_BY_ID, UPGRADE_MAX_BONUS, type ModuleDef } from '../data/modules';
 import { UPGRADE_BY_ID, upgradeCost, type UpgradeDef } from '../data/upgrades';
 import { VIRUS_BY_ID } from '../data/viruses';
@@ -21,6 +22,7 @@ import { HackSystem } from '../system/HackSystem';
 import { PickupSystem } from '../system/PickupSystem';
 import { VirusBehaviorSystem } from '../system/VirusBehaviorSystem';
 import { WaveSystem } from '../system/WaveSystem';
+import { chance, pick } from '../utils/random';
 import type { Cell } from './Cell';
 import { EventBus } from './EventBus';
 import type { LogKind } from './GameEvents';
@@ -60,6 +62,8 @@ export class Game {
   paused = false;
   lastResult: WaveResult = 'none';
   autoStartTimer = AUTO_START_DELAY;
+  /** Modifier rolled for the next wave; applies only if the chosen level is eligible. */
+  nextModifier?: ModifierDef = undefined;
   /** Integrity lost during the current wave (for the flawless achievement). */
   private damageTaken = 0;
   private saveTimer = 0;
@@ -109,13 +113,17 @@ export class Game {
     this.paused = false;
     this.log(`Wave ${level} deployed. Scanning for threats...`, 'system');
     this.bus.emit('waveStarted', { level, boss: isBossLevel(level) });
-    this.waves.begin(level);
+    const modifier = WaveSystem.eligible(level) ? this.nextModifier : undefined;
+    this.nextModifier = undefined;
+    if (modifier) this.log(`WAVE MODIFIER: ${modifier.name}. ${modifier.description} (credits ×${modifier.reward})`, 'warn');
+    this.waves.begin(level, modifier);
   }
 
   private clearWave(): void {
     const { player } = this;
     const level = this.waves.level;
-    const bonus = waveClearBonus(level) * player.creditMult;
+    const bonus = waveClearBonus(level) * player.creditMult * this.waves.rewardMult;
+    if (this.waves.modifier) player.stats.modifiedWaves++;
     player.addCredits(bonus);
     if (this.damageTaken === 0 && level >= 3) player.stats.flawlessWaves++;
     if (level >= player.highestLevel) player.highestLevel = level + 1;
@@ -125,6 +133,7 @@ export class Game {
     this.resetBoard();
     this.lastResult = 'cleared';
     this.autoStartTimer = AUTO_START_DELAY;
+    this.rollModifier();
     this.bus.emit('waveCleared', { level, bonus });
     this.log(`Wave ${level} cleared. System stable.`, 'good');
 
@@ -147,6 +156,7 @@ export class Game {
     this.phase = 'intermission';
     this.lastResult = 'failed';
     this.autoStartTimer = AUTO_START_DELAY * 2;
+    this.rollModifier();
     this.bus.emit('waveFailed', { level });
     this.log(`SYSTEM BREACHED on wave ${level}. Upgrade and redeploy.`, 'alert');
     this.save();
@@ -155,6 +165,11 @@ export class Game {
   /** Abort the current wave (counts as a failure, keeps credits). */
   abortWave(): void {
     if (this.phase === 'wave') this.failWave();
+  }
+
+  /** Roll a modifier for the next wave (level-agnostic; eligibility is checked on deploy). */
+  rollModifier(): void {
+    this.nextModifier = chance(MODIFIER_CHANCE) ? pick(MODIFIERS) : undefined;
   }
 
   continueAfterVictory(): void {
@@ -175,7 +190,7 @@ export class Game {
   private resetBoard(): void {
     this.grid.clear();
     this.bosses.clear();
-    this.waves.stopSpawning();
+    this.waves.end();
     this.abilities.reset();
     this.player.clearBuffs();
     this.daemon.reset();
@@ -320,6 +335,7 @@ export class Game {
     this.resetBoard();
     this.phase = 'intermission';
     this.lastResult = 'none';
+    this.rollModifier();
     this.bus.emit('prestige', { keys: gain });
     this.bus.emit('stateReset', undefined);
     this.log(`OS reinstalled. +${gain} root keys. Fresh system, stronger admin.`, 'system');
@@ -333,6 +349,7 @@ export class Game {
   spawnVirus(cell: Cell, virus: Virus): void {
     cell.pickup = undefined;
     cell.virus = virus;
+    this.waves.applyModifier(virus);
     if (!this.player.seen.has(virus.kind) && VIRUS_BY_ID.has(virus.kind)) {
       this.player.seen.add(virus.kind);
       if (!virus.disguised) this.log(`NEW THREAT: ${virus.name}. See Threat DB.`, 'warn');
@@ -365,6 +382,7 @@ export class Game {
     this.resetBoard();
     this.phase = 'intermission';
     this.lastResult = 'none';
+    this.rollModifier();
     this.autoStartTimer = AUTO_START_DELAY;
     this.bus.emit('stateReset', undefined);
     return true;
@@ -376,6 +394,7 @@ export class Game {
     this.resetBoard();
     this.phase = 'intermission';
     this.lastResult = 'none';
+    this.rollModifier();
     this.bus.emit('stateReset', undefined);
     this.log('All data wiped. Fresh install.', 'system');
   }

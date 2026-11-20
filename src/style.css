@@ -761,6 +761,17 @@ kbd {
 .overlay-boss b {
   color: var(--red);
 }
+.overlay-mod {
+  padding: 8px 10px;
+  border-left: 3px solid var(--violet);
+  background: rgba(177, 140, 255, 0.08);
+}
+.overlay-mod b {
+  color: var(--violet);
+}
+.overlay-mod-reward {
+  color: var(--amber);
+}
 .overlay-new {
   padding: 6px 10px;
   border-left: 3px solid var(--amber);

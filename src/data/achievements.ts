@@ -22,6 +22,7 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'credits-1e4', name: 'Crypto Curious', description: 'Earn 10K credits in total.', check: (p) => p.stats.creditsEarned >= 1e4 },
   { id: 'credits-1e6', name: 'Millionaire.exe', description: 'Earn 1M credits in total.', check: (p) => p.stats.creditsEarned >= 1e6 },
   { id: 'flawless', name: 'No Regressions', description: 'Clear a wave of level 3+ without losing integrity.', check: (p) => p.stats.flawlessWaves >= 1 },
+  { id: 'chaos', name: 'Chaos Engineer', description: 'Clear 10 waves with a modifier.', check: (p) => p.stats.modifiedWaves >= 10 },
   { id: 'trojan', name: 'Not Falling For That', description: 'Quarantine a Trojan before it activates.', check: (p) => p.stats.trojansCaught >= 1 },
   { id: 'packets-50', name: 'Packet Hoarder', description: 'Collect 50 data packets.', check: (p) => p.stats.packets >= 50 },
   { id: 'prestige', name: 'Fresh Install', description: 'Reinstall the OS (prestige) once.', check: (p) => p.stats.prestiges >= 1 },

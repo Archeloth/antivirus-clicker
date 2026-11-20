@@ -5,7 +5,6 @@ import { virusDef, type BossDef } from '../data/viruses';
 import { createBoss, createVirus, type Virus } from '../entities/Virus';
 import { pick } from '../utils/random';
 
-const ROOTKIT_REVEAL = 2.5;
 const ROOTKIT_RELOCATE = 7;
 const BOTNET_NODES = 4;
 const BOTNET_EXPOSE = 12;
@@ -48,6 +47,7 @@ export class BossSystem {
     this.game.spawnVirus(cell, boss);
 
     if (def.behavior === 'rootkit' || def.behavior === 'zeroday') {
+      boss.cloaked = true; // DaemonSystem reveals cloaked threats it sweeps over
       boss.hidden = true;
       this.mechTimer = ROOTKIT_RELOCATE;
     }
@@ -119,15 +119,8 @@ export class BossSystem {
 
   // ── Gimmicks ─────────────────────────────────────────────
 
-  /** Hidden until the daemon zone sweeps over it; relocates periodically. */
+  /** Cloaked (revealed by DaemonSystem sweeps); relocates periodically and re-cloaks. */
   private rootkit(boss: Virus, cell: Cell, dt: number): void {
-    if (this.game.daemon.contains(cell)) {
-      if (boss.revealTimer <= 0) this.game.log(`${boss.name} exposed at its hiding spot!`, 'warn');
-      boss.revealTimer = ROOTKIT_REVEAL;
-    }
-    boss.revealTimer = Math.max(0, boss.revealTimer - dt);
-    boss.hidden = boss.revealTimer <= 0;
-
     this.mechTimer -= dt;
     if (this.mechTimer <= 0) {
       this.mechTimer = ROOTKIT_RELOCATE;
@@ -190,6 +183,7 @@ export class BossSystem {
     const phase = frac > 2 / 3 ? 1 : frac > 1 / 3 ? 2 : 3;
     if (phase !== this.phase) {
       this.phase = phase;
+      boss.cloaked = false;
       boss.hidden = false;
       boss.revealTimer = 0;
       boss.immune = 'none';

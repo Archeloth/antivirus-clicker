@@ -142,8 +142,8 @@ export class SystemTab {
       const st = player.stats;
       const rows: [string, string][] = [
         ['Threats neutralized', fmt(st.kills)],
-        ['Clicks', fmt(st.clicks)],
-        ['Critical clicks', fmt(st.crits)],
+        ['Hacks', fmt(st.hacks)],
+        ['Critical hacks', fmt(st.crits)],
         ['Data packets', fmt(st.packets)],
         ['Bosses defeated', fmt(st.bossesKilled)],
         ['Credits earned', fmt(st.creditsEarned)],

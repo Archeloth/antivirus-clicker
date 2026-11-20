@@ -30,7 +30,7 @@ export class ShopTab {
       h('div', { class: 'shop-toolbar' }, h('span', { text: 'Buy amount' }), this.modeButton),
     );
 
-    const categories: UpgradeCategory[] = ['click', 'daemon', 'system', 'ability'];
+    const categories: UpgradeCategory[] = ['hack', 'daemon', 'system', 'ability'];
     for (const category of categories) {
       this.root.append(h('div', { class: 'shop-category', text: CATEGORY_LABELS[category] }));
       for (const def of UPGRADES.filter((u) => u.category === category)) {

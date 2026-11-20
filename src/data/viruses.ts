@@ -153,7 +153,7 @@ export const VIRUSES: readonly VirusDef[] = [
     weight: 5,
     trait: 'trojan',
     description:
-      'Disguised as a data packet. Click it before it activates to quarantine it for double credits.',
+      'Disguised as a data packet. Hack it before it activates to quarantine it for double credits.',
   },
   {
     id: 'obf',
@@ -196,7 +196,7 @@ export const VIRUSES: readonly VirusDef[] = [
     weight: 5,
     trait: 'encrypt',
     description:
-      'Encrypts adjacent threats: the daemon cannot touch them, but clicks can. Killing it decrypts all.',
+      'Encrypts adjacent threats: the daemon cannot touch them, but hacking can. Killing it decrypts all.',
   },
   {
     id: 'node',
@@ -248,7 +248,7 @@ export const BOSSES: readonly BossDef[] = [
     behavior: 'rootkit',
     level: 5,
     description:
-      'Hides inside the system. Sweep it with the daemon to expose it, then strike before it burrows elsewhere.',
+      'Hides inside the system. Sweep it with the daemon [E] to expose it, then strike before it burrows elsewhere.',
   },
   {
     id: 'botnet',
@@ -280,7 +280,7 @@ export const BOSSES: readonly BossDef[] = [
     behavior: 'polymorph',
     level: 15,
     description:
-      'Rewrites itself every 6s, alternating immunity to clicks and to the daemon. Spawns minions.',
+      'Rewrites itself every 6s, alternating immunity to hacks and to the daemon. Spawns minions.',
   },
   {
     id: 'zeroday',

@@ -59,7 +59,7 @@ export class WaveBar {
     if (boss.hidden) state = 'HIDDEN: sweep with daemon';
     else if (bosses.exposed > 0) state = `CORE EXPOSED ${fmtSeconds(bosses.exposed)}`;
     else if (boss.immune === 'all') state = 'SHIELDED: kill the nodes';
-    else if (boss.immune === 'click') state = 'IMMUNE: clicks';
+    else if (boss.immune === 'hack') state = 'IMMUNE: hacking';
     else if (boss.immune === 'daemon') state = 'IMMUNE: daemon';
     else if (boss.boss?.behavior === 'rootkit' || (boss.boss?.behavior === 'zeroday' && bosses.phase === 1)) {
       state = 'EXPOSED';

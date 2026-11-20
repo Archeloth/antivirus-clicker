@@ -56,7 +56,7 @@ export class BossSystem {
       this.exposed = 0;
     }
     if (def.behavior === 'polymorph') {
-      boss.immune = 'click';
+      boss.immune = 'hack';
       this.mechTimer = POLY_SWITCH;
     }
 
@@ -166,15 +166,15 @@ export class BossSystem {
     boss.immune = 'all';
   }
 
-  /** Alternates click/daemon immunity and spawns minions. */
+  /** Alternates hack/daemon immunity and spawns minions. */
   private polymorph(boss: Virus, dt: number, switchEvery: number): void {
-    if (boss.immune !== 'click' && boss.immune !== 'daemon') boss.immune = 'click';
+    if (boss.immune !== 'hack' && boss.immune !== 'daemon') boss.immune = 'hack';
     this.mechTimer -= dt;
     if (this.mechTimer <= 0) {
       this.mechTimer = switchEvery;
-      boss.immune = boss.immune === 'click' ? 'daemon' : 'click';
+      boss.immune = boss.immune === 'hack' ? 'daemon' : 'hack';
       this.game.log(
-        `${boss.name} mutated: now immune to ${boss.immune === 'click' ? 'CLICKS' : 'the DAEMON'}.`,
+        `${boss.name} mutated: now immune to ${boss.immune === 'hack' ? 'HACKING' : 'the DAEMON'}.`,
         'warn',
       );
     }

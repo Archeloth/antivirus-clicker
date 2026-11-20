@@ -98,6 +98,7 @@ export class UI {
     this.bindKeys();
 
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) game.setHolding(false);
       if (document.hidden && game.phase === 'wave' && !game.paused) game.togglePause();
       if (document.hidden) game.save();
     });
@@ -141,10 +142,27 @@ export class UI {
         this.toggleMute();
         return;
       }
+      const inWave = game.phase === 'wave';
+
+      // Hold-to-hack. Key auto-repeat is ignored: holding is what counts, not mashing.
+      if (key === ' ') {
+        if (inWave) event.preventDefault(); // never "press" a focused button mid-wave
+        if (!event.repeat) game.setHolding(true);
+        return;
+      }
+      if (key === 'Tab' && inWave) {
+        game.cycleTarget(event.shiftKey ? -1 : 1);
+        event.preventDefault();
+        return;
+      }
+      if (key === 'e') {
+        game.daemonToCursor();
+        return;
+      }
       const move = MOVE_KEYS[key];
       if (move) {
-        game.moveDaemon(move[0], move[1]);
-        event.preventDefault();
+        game.moveCursor(move[0], move[1]);
+        if (inWave) event.preventDefault();
         return;
       }
       const ability = game.abilities.abilities.find((a) => a.key === key);
@@ -152,6 +170,16 @@ export class UI {
         game.useAbility(ability.id);
         event.preventDefault();
       }
+    });
+
+    window.addEventListener('keyup', (event) => {
+      if (event.key === ' ') game.setHolding(false);
+    });
+    // Never leave hacking stuck on when focus leaves the page.
+    window.addEventListener('blur', () => game.setHolding(false));
+    game.bus.on('waveStarted', () => {
+      // Drop focus from any shop/tab button so Space and arrows go to the game.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     });
   }
 

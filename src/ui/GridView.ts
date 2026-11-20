@@ -22,6 +22,9 @@ export class GridView {
   readonly overlayHost: HTMLDivElement;
   private readonly gridEl: HTMLDivElement;
   private readonly daemonEl: HTMLDivElement;
+  private readonly cursorEl: HTMLDivElement;
+  private readonly cursorFocus: HTMLDivElement;
+  private pointerHolding = false;
   private readonly views: CellView[] = [];
   private readonly cache = new DomCache();
   private readonly particles: Particles;
@@ -45,12 +48,15 @@ export class GridView {
     }
 
     this.daemonEl = h('div', { class: 'daemon' }, h('span', { class: 'daemon-label', text: 'daemon' }));
+    this.cursorFocus = h('div', { class: 'cursor-focus-fill' });
+    this.cursorEl = h('div', { class: 'cursor' }, h('div', { class: 'cursor-focus' }, this.cursorFocus));
     this.overlayHost = h('div', { class: 'overlay-host' });
     this.root = h(
       'div',
       { class: 'grid-wrap' },
       this.gridEl,
       this.daemonEl,
+      this.cursorEl,
       this.particles.canvas,
       this.popups.layer,
       this.overlayHost,
@@ -66,14 +72,35 @@ export class GridView {
       const index = el ? Number(el.dataset.i) : NaN;
       return Number.isNaN(index) ? undefined : this.game.grid.cells[index];
     };
+    // Mouse/touch mirror the keyboard: hover moves the cursor, holding the button hacks.
     this.gridEl.addEventListener('pointerdown', (event) => {
       const cell = cellFrom(event);
       if (!cell) return;
       // Touch has no right-click: tapping an empty cell moves the daemon instead.
       const touchMove = event.pointerType === 'touch' && cell.isEmpty;
-      if (event.button === 2 || event.shiftKey || touchMove) this.game.placeDaemon(cell);
-      else if (event.button === 0) this.game.clickCell(cell);
+      if (event.button === 2 || event.shiftKey || touchMove) {
+        this.game.placeDaemon(cell);
+        return;
+      }
+      if (event.button !== 0) return;
+      // Let pointerover keep firing while a finger slides across cells.
+      if (this.gridEl.hasPointerCapture(event.pointerId)) this.gridEl.releasePointerCapture(event.pointerId);
+      this.game.setCursor(cell);
+      this.pointerHolding = true;
+      this.game.setHolding(true);
     });
+    this.gridEl.addEventListener('pointerover', (event) => {
+      const cell = cellFrom(event);
+      if (cell && (event.pointerType === 'mouse' || this.pointerHolding)) this.game.setCursor(cell);
+    });
+    const release = () => {
+      if (!this.pointerHolding) return;
+      this.pointerHolding = false;
+      this.game.setHolding(false);
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    this.gridEl.addEventListener('pointerleave', release);
     this.gridEl.addEventListener('contextmenu', (event) => event.preventDefault());
   }
 
@@ -87,7 +114,7 @@ export class GridView {
     bus.on('virusDamaged', ({ cell, amount, source, crit }) => {
       const view = this.views[cell.index];
       if (!view) return;
-      if (source === 'click' || crit) {
+      if (source === 'hack' || crit) {
         if (this.motion) {
           view.chip.animate(
             [{ transform: 'scale(0.86)' }, { transform: 'scale(1)' }],
@@ -95,7 +122,7 @@ export class GridView {
           );
         }
         if (player.settings.damageNumbers) {
-          this.popups.show(cell.x, cell.y, fmt(amount), crit ? 'crit' : 'click');
+          this.popups.show(cell.x, cell.y, fmt(amount), crit ? 'crit' : 'hack');
         }
         if (crit && this.motion) this.particles.burst(cell.x, cell.y, '#ffe066', 6, 1.6);
       } else {
@@ -188,7 +215,7 @@ export class GridView {
           }
           if (v.immune !== 'none') {
             cls += ' is-immune';
-            badge = v.immune === 'click' ? '⊘CLK' : v.immune === 'daemon' ? '⊘DMN' : '⊘ALL';
+            badge = v.immune === 'hack' ? '⊘HCK' : v.immune === 'daemon' ? '⊘DMN' : '⊘ALL';
           }
           if (combat.isShielded(cell)) cls += ' is-shielded';
           if (v.trait === 'shield' && v.generation === 0) cls += ' is-shielder';
@@ -217,6 +244,17 @@ export class GridView {
     this.cache.style(this.daemonEl, 'top', `${daemon.y * unit}%`);
     this.cache.style(this.daemonEl, 'width', `${daemon.size * unit}%`);
     this.cache.style(this.daemonEl, 'height', `${daemon.size * unit}%`);
+
+    // Hack cursor + focus meter
+    const { hack } = this.game;
+    this.cache.style(this.cursorEl, 'display', showDaemon ? 'block' : 'none');
+    this.cache.style(this.cursorEl, 'left', `${hack.x * unit}%`);
+    this.cache.style(this.cursorEl, 'top', `${hack.y * unit}%`);
+    this.cache.style(this.cursorEl, 'width', `${unit}%`);
+    this.cache.style(this.cursorEl, 'height', `${unit}%`);
+    const cursorCls = `cursor${hack.holding ? ' is-hacking' : ''}${hack.focusFraction >= 1 ? ' is-focused' : ''}`;
+    if (this.cache.changed(this.cursorEl, 'class', cursorCls)) this.cursorEl.className = cursorCls;
+    this.cache.style(this.cursorFocus, 'transform', `scaleX(${hack.focusFraction.toFixed(2)})`);
 
     this.particles.update(dt);
   }

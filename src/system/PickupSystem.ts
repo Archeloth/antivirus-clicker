@@ -7,7 +7,7 @@ const BASE_CHANCE_PER_SECOND = 0.06;
 const PACKET_TTL = 6;
 const PACKET_VALUE = 8; // in Bug-kills-at-level-1 units
 
-/** Data packets: click-only bonus credits that appear on empty cells during waves. */
+/** Data packets: hack-only bonus credits that appear on empty cells during waves. */
 export class PickupSystem {
   private timer = 0;
 

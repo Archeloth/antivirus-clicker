@@ -1,6 +1,5 @@
 import {
   AUTO_START_DELAY,
-  CRIT_MULTIPLIER,
   FINAL_LEVEL,
   GRID_H,
   GRID_W,
@@ -16,10 +15,10 @@ import { AchievementSystem } from '../system/AchievementSystem';
 import { BossSystem } from '../system/BossSystem';
 import { CombatSystem } from '../system/CombatSystem';
 import { DaemonSystem } from '../system/DaemonSystem';
+import { HackSystem } from '../system/HackSystem';
 import { PickupSystem } from '../system/PickupSystem';
 import { VirusBehaviorSystem } from '../system/VirusBehaviorSystem';
 import { WaveSystem } from '../system/WaveSystem';
-import { chance } from '../utils/random';
 import type { Cell } from './Cell';
 import { EventBus } from './EventBus';
 import type { LogKind } from './GameEvents';
@@ -49,6 +48,7 @@ export class Game {
   readonly viruses = new VirusBehaviorSystem(this);
   readonly bosses = new BossSystem(this);
   readonly daemon = new DaemonSystem(this);
+  readonly hack = new HackSystem(this);
   readonly abilities = new AbilitySystem(this);
   readonly pickups = new PickupSystem(this);
   readonly achievements = new AchievementSystem(this);
@@ -79,6 +79,7 @@ export class Game {
       this.bosses.update(dt);
       this.viruses.update(dt);
       this.daemon.update(dt);
+      this.hack.update(dt);
       this.pickups.update(dt);
 
       if (player.hp <= 0) this.failWave();
@@ -156,7 +157,9 @@ export class Game {
   }
 
   togglePause(): void {
-    if (this.phase === 'wave') this.paused = !this.paused;
+    if (this.phase !== 'wave') return;
+    this.paused = !this.paused;
+    if (this.paused) this.hack.setHolding(false);
   }
 
   selectLevel(level: number): void {
@@ -171,33 +174,34 @@ export class Game {
     this.abilities.reset();
     this.player.clearBuffs();
     this.daemon.reset();
+    this.hack.reset();
   }
 
   // ── Player actions ───────────────────────────────────────
 
-  clickCell(cell: Cell): void {
+  /** Start/stop hacking the cursor cell (Space or a held mouse button). */
+  setHolding(on: boolean): void {
+    this.hack.setHolding(on && this.phase === 'wave' && !this.paused);
+  }
+
+  moveCursor(dx: number, dy: number): void {
     if (this.phase !== 'wave' || this.paused) return;
-    const { player } = this;
-    player.stats.clicks++;
+    this.hack.moveCursor(dx, dy);
+  }
 
-    if (cell.pickup) {
-      this.pickups.collect(cell);
-      return;
-    }
-    const virus = cell.virus;
-    if (!virus) return;
+  setCursor(cell: Cell): void {
+    if (this.phase !== 'wave' || this.paused) return;
+    this.hack.setCursor(cell);
+  }
 
-    if (virus.disguised) {
-      player.stats.trojansCaught++;
-      this.log('Trojan quarantined before activation. Double credits!', 'good');
-      this.combat.kill(cell, 'click', 0, 2);
-      return;
-    }
+  cycleTarget(direction: 1 | -1): void {
+    if (this.phase !== 'wave' || this.paused) return;
+    this.hack.cycle(direction);
+  }
 
-    const crit = chance(player.critChance);
-    if (crit) player.stats.crits++;
-    const damage = player.clickDamage * (crit ? CRIT_MULTIPLIER : 1);
-    this.combat.damage(cell, damage, 'click', crit);
+  daemonToCursor(): void {
+    if (this.phase !== 'wave' || this.paused) return;
+    this.daemon.centerOn(this.hack.cell);
   }
 
   moveDaemon(dx: number, dy: number): void {

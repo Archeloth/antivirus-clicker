@@ -27,7 +27,9 @@ export class StatusPanel {
   constructor(private readonly game: Game) {
     const statList = h('dl', { class: 'stat-list' });
     for (const [key, label] of [
-      ['click', 'Click dmg'],
+      ['hack', 'Hack dmg'],
+      ['hackRate', 'Hack rate'],
+      ['focus', 'Focus cap'],
       ['crit', 'Crit chance'],
       ['daemon', 'Daemon dmg'],
       ['rate', 'Daemon rate'],
@@ -74,10 +76,12 @@ export class StatusPanel {
       h(
         'div',
         { class: 'controls-hint' },
-        h('div', {}, h('kbd', { text: 'click' }), ' hack a cell'),
-        h('div', {}, h('kbd', { text: 'right-click' }), ' move daemon (touch: tap empty cell)'),
-        h('div', {}, h('kbd', { text: '←↑↓→' }), '/', h('kbd', { text: 'WASD' }), ' nudge daemon'),
+        h('div', {}, h('kbd', { text: '←↑↓→' }), '/', h('kbd', { text: 'WASD' }), ' move cursor'),
+        h('div', {}, h('kbd', { text: 'Tab' }), '/', h('kbd', { text: '⇧Tab' }), ' next / prev threat'),
+        h('div', {}, h('kbd', { text: 'Space' }), ' HOLD to hack (no mashing)'),
+        h('div', {}, h('kbd', { text: 'E' }), ' send daemon to cursor'),
         h('div', {}, h('kbd', { text: '1-5' }), ' abilities  ', h('kbd', { text: 'P' }), ' pause  ', h('kbd', { text: 'M' }), ' mute'),
+        h('div', {}, 'mouse: hover + hold to hack, right-click = daemon'),
       ),
     );
   }
@@ -97,7 +101,9 @@ export class StatusPanel {
     setText(this.level, `${player.level} · cleared ${player.highestLevel - 1}`);
 
     const s = this.stats;
-    setText(s.get('click')!, fmt(player.clickDamage));
+    setText(s.get('hack')!, fmt(player.hackDamage));
+    setText(s.get('hackRate')!, `${player.hackRate.toFixed(1)}/s`);
+    setText(s.get('focus')!, `×${player.focusCap.toFixed(2)}`);
     setText(s.get('crit')!, fmtPct(player.critChance));
     setText(s.get('daemon')!, fmt(player.daemonDamage));
     setText(s.get('rate')!, `${(1 / player.daemonInterval).toFixed(2)}/s`);

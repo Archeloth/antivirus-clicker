@@ -76,10 +76,12 @@ export class Overlay {
         h(
           'div',
           { class: 'overlay-tutorial' },
-          h('div', { text: '> CLICK infected cells to hack them.' }),
-          h('div', { text: '> Your DAEMON (green zone) damages everything inside it automatically. Move it with RIGHT-CLICK or the arrow keys.' }),
+          h('div', { text: '> Move your CURSOR with the arrow keys / WASD, or jump between threats with TAB.' }),
+          h('div', { text: '> HOLD SPACE to hack the threat under the cursor. Stay on one target to build focus damage. Mashing does nothing extra.' }),
+          h('div', { text: '> Your DAEMON (green zone) damages everything inside it automatically. Press E to send it to your cursor.' }),
           h('div', { text: '> Threats drain your INTEGRITY every second. Clear the wave before it hits zero.' }),
-          h('div', { text: '> Click [$] data packets for bonus credits.' }),
+          h('div', { text: '> Hack [$] data packets for bonus credits.' }),
+          h('div', { text: '> Prefer the mouse? Hover a cell and hold the button; right-click sends the daemon.' }),
         ),
       );
     }

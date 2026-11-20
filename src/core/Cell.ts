@@ -1,6 +1,6 @@
 import type { Virus } from '../entities/Virus';
 
-/** A clickable data packet. Only clicks collect it — the daemon ignores packets. */
+/** A data packet. Only hacking collects it — the daemon ignores packets. */
 export interface Pickup {
   value: number;
   ttl: number;

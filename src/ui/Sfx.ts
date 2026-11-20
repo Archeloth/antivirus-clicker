@@ -18,7 +18,7 @@ export class Sfx {
     const bus = game.bus;
     bus.on('virusDamaged', ({ source, crit }) => {
       if (crit) this.play('crit', 30, () => this.tone(1700, 0.07, 'square', 0.09, 2600));
-      else if (source === 'click') this.play('click', 25, () => this.tone(1150, 0.03, 'square', 0.05));
+      else if (source === 'hack') this.play('hack', 25, () => this.tone(1150, 0.03, 'square', 0.05));
     });
     bus.on('daemonPulse', () => this.play('pulse', 120, () => this.tone(180, 0.04, 'sine', 0.04, 140)));
     bus.on('virusKilled', ({ source }) => {

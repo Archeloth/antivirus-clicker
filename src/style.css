@@ -623,6 +623,52 @@ kbd {
   letter-spacing: 0.1em;
 }
 
+/* Hack cursor: amber corner brackets, focus meter underneath */
+.cursor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  --cc: var(--amber);
+  background:
+    linear-gradient(var(--cc), var(--cc)) top left / 28% 2px no-repeat,
+    linear-gradient(var(--cc), var(--cc)) top left / 2px 28% no-repeat,
+    linear-gradient(var(--cc), var(--cc)) top right / 28% 2px no-repeat,
+    linear-gradient(var(--cc), var(--cc)) top right / 2px 28% no-repeat,
+    linear-gradient(var(--cc), var(--cc)) bottom left / 28% 2px no-repeat,
+    linear-gradient(var(--cc), var(--cc)) bottom left / 2px 28% no-repeat,
+    linear-gradient(var(--cc), var(--cc)) bottom right / 28% 2px no-repeat,
+    linear-gradient(var(--cc), var(--cc)) bottom right / 2px 28% no-repeat;
+  transition: left 0.07s ease-out, top 0.07s ease-out;
+}
+.cursor.is-hacking {
+  filter: drop-shadow(0 0 6px var(--amber));
+  animation: cursor-pulse 0.25s ease-in-out infinite alternate;
+}
+.cursor.is-focused {
+  --cc: #ffe066;
+}
+.cursor-focus {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: -5px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 181, 71, 0.15);
+  overflow: hidden;
+}
+.cursor-focus-fill {
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background: var(--cc);
+}
+@keyframes cursor-pulse {
+  to {
+    transform: scale(0.94);
+  }
+}
+
 .particles {
   position: absolute;
   inset: 0;
@@ -645,7 +691,7 @@ kbd {
   text-shadow: 0 1px 0 #000, 0 0 6px #000;
   will-change: transform, opacity;
 }
-.popup--click {
+.popup--hack {
   color: var(--text-strong);
 }
 .popup--crit {

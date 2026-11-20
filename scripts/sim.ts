@@ -1,14 +1,16 @@
 /**
  * Headless balance simulation: a scripted bot plays the real game logic.
- * Usage: npm run sim [-- --cps 6 --hours 3 --until 30]
+ * Usage: npm run sim [-- --react 0.5 --hours 3 --until 30]
  *
- * The bot clicks at a fixed rate, steers the daemon toward the biggest threat,
- * fires abilities when they are ready and greedily buys the cheapest upgrade.
- * It is a rough stand-in for a competent-but-not-perfect player.
+ * The bot holds hack (like holding Space), retargets the cursor after
+ * `--react` seconds once its target is gone, steers the daemon toward the
+ * biggest threat, fires abilities when ready and greedily buys upgrades.
+ * Damage no longer depends on click speed, so reaction time is the skill knob.
  */
 import { Game } from '../src/core/Game';
 import type { Cell } from '../src/core/Cell';
 import { STEP } from '../src/data/balance';
+import { isHackable } from '../src/system/HackSystem';
 import { UPGRADES } from '../src/data/upgrades';
 import { fmt } from '../src/utils/format';
 
@@ -18,7 +20,7 @@ const arg = (name: string, fallback: number): number => {
   return i >= 0 ? Number(args[i + 1]) : fallback;
 };
 
-const CLICKS_PER_SECOND = arg('cps', 6);
+const REACT_SECONDS = arg('react', 0.5);
 const MAX_HOURS = arg('hours', 3);
 const UNTIL_LEVEL = arg('until', 30);
 
@@ -31,7 +33,7 @@ interface Row {
   seconds: number;
   hpLeft: number;
   credits: number;
-  click: number;
+  hack: number;
   daemon: number;
   at: number;
 }
@@ -57,7 +59,7 @@ game.bus.on('waveCleared', ({ level }) => {
       seconds: waveTime,
       hpLeft: game.player.hp / game.player.maxHp,
       credits: game.player.credits,
-      click: game.player.clickDamage,
+      hack: game.player.hackDamage,
       daemon: game.player.daemonDamage,
       at: game.player.stats.playTime,
     });
@@ -66,30 +68,21 @@ game.bus.on('waveCleared', ({ level }) => {
 });
 
 function blankRow(level: number, attempts: number): Row {
-  return { level, attempts, seconds: 0, hpLeft: 0, credits: 0, click: 0, daemon: 0, at: 0 };
+  return { level, attempts, seconds: 0, hpLeft: 0, credits: 0, hack: 0, daemon: 0, at: 0 };
 }
 
-function bestClickTarget(): Cell | undefined {
-  let best: Cell | undefined;
-  let bestScore = -Infinity;
-  for (const cell of game.grid.cells) {
-    if (cell.pickup) return cell;
-    const v = cell.virus;
-    if (!v) continue;
-    if (v.disguised) return cell;
-    if (v.hidden || v.immune === 'all' || v.immune === 'click') continue;
-    // Prefer priority traits, then lowest HP (finish kills)
-    let score = -v.hp / v.maxHp;
-    if (v.trait === 'heal' || v.trait === 'shield' || v.trait === 'encrypt') score += 2;
-    if (v.encryptedBy) score += 1;
-    if (v.kind === 'node') score += 3;
-    if (v.boss) score += 1;
-    if (score > bestScore) {
-      bestScore = score;
-      best = cell;
-    }
+/** Human-ish retargeting: once the cursor cell is no longer worth hacking, wait, then Tab to the best one. */
+let retargetIn = 0;
+function steerCursor(dt: number): void {
+  if (isHackable(game.hack.cell)) {
+    retargetIn = REACT_SECONDS;
+    return;
   }
-  return best;
+  retargetIn -= dt;
+  if (retargetIn > 0) return;
+  const next = game.hack.bestTarget();
+  if (next) game.setCursor(next);
+  retargetIn = REACT_SECONDS;
 }
 
 function steerDaemon(): void {
@@ -97,7 +90,7 @@ function steerDaemon(): void {
   const boss = game.bosses.boss;
   if (boss) {
     const cell = game.grid.findVirusCell(boss.id);
-    if (cell && (boss.hidden || boss.immune === 'click')) {
+    if (cell && (boss.hidden || boss.immune === 'hack')) {
       game.daemon.centerOn(cell);
       return;
     }
@@ -117,7 +110,7 @@ function steerDaemon(): void {
 
 const PRIORITY: Record<string, number> = {
   emp: 0.5, 'logic-bomb': 0.5, overdrive: 0.5, firewall: 0.6, miner: 0.6,
-  wan: 0.6, heuristic: 0.8, root: 0.7, kernel: 0.9, mining: 1.1, sniffer: 1.5,
+  'target-lock': 0.3, 'macro-keys': 0.9, wan: 0.6, heuristic: 0.8, root: 0.7, kernel: 0.9, mining: 1.1, sniffer: 1.5,
 };
 
 function shop(): void {
@@ -134,7 +127,6 @@ function shop(): void {
   }
 }
 
-const clickEvery = Math.max(1, Math.round(1 / (CLICKS_PER_SECOND * STEP)));
 const maxSteps = MAX_HOURS * 3600 / STEP;
 let step = 0;
 
@@ -167,10 +159,8 @@ while (step < maxSteps && game.player.highestLevel <= UNTIL_LEVEL) {
   }
 
   waveTime += STEP;
-  if (step % clickEvery === 0) {
-    const target = bestClickTarget();
-    if (target) game.clickCell(target);
-  }
+  steerCursor(STEP);
+  game.setHolding(true);
   if (step % 60 === 0) {
     steerDaemon();
     const threats = game.grid.countViruses();
@@ -182,8 +172,8 @@ while (step < maxSteps && game.player.highestLevel <= UNTIL_LEVEL) {
   game.update(STEP);
 }
 
-console.log(`cps=${CLICKS_PER_SECOND}  simulated ${(game.player.stats.playTime / 60).toFixed(1)} min`);
-console.log('lvl  tries  wave_s  hp_left   credits    click    daemon   t_min');
+console.log(`react=${REACT_SECONDS}s  simulated ${(game.player.stats.playTime / 60).toFixed(1)} min`);
+console.log('lvl  tries  wave_s  hp_left   credits     hack    daemon   t_min');
 for (const row of [...rows.values()].sort((a, b) => a.level - b.level)) {
   console.log(
     [
@@ -192,7 +182,7 @@ for (const row of [...rows.values()].sort((a, b) => a.level - b.level)) {
       row.seconds.toFixed(0).padStart(7),
       `${Math.round(row.hpLeft * 100)}%`.padStart(8),
       fmt(row.credits).padStart(9),
-      fmt(row.click).padStart(8),
+      fmt(row.hack).padStart(8),
       fmt(row.daemon).padStart(9),
       (row.at / 60).toFixed(1).padStart(7),
     ].join(' '),

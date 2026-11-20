@@ -1,7 +1,7 @@
 import { armorScale, dpsScale, hpScale, rewardScale } from '../data/balance';
 import type { BossDef, Trait, VirusDef } from '../data/viruses';
 
-export type Immunity = 'none' | 'click' | 'daemon' | 'all';
+export type Immunity = 'none' | 'hack' | 'daemon' | 'all';
 
 let nextId = 1;
 

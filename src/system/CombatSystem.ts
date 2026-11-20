@@ -11,7 +11,7 @@ const VAMPIRE_REFUND = 1.5;
 const FORK_CHILD = { hp: 0.35, reward: 0.4, dps: 0.5 };
 
 /**
- * The ONLY place threats take damage or die. Every source (click, daemon,
+ * The ONLY place threats take damage or die. Every source (hack, daemon,
  * abilities, explosions, chains, boss purge) goes through damage()/kill(),
  * so rewards, death effects and events are always consistent.
  */
@@ -86,7 +86,7 @@ export class CombatSystem {
     }
 
     // Code Injection: chain the killing blow into a neighbor
-    if ((source === 'click' || source === 'daemon') && lastHit > 0 && chance(player.chainChance)) {
+    if ((source === 'hack' || source === 'daemon') && lastHit > 0 && chance(player.chainChance)) {
       const target = pick(grid.neighbors(cell).filter((n) => n.virus && !n.virus.disguised));
       if (target) this.damage(target, lastHit, 'chain');
     }
@@ -109,9 +109,9 @@ export class CombatSystem {
     const virus = cell.virus!;
     if (virus.hidden) return 'HIDDEN';
     if (virus.immune === 'all') return 'IMMUNE';
-    const isClick = source === 'click';
+    const isClick = source === 'hack';
     const isDaemon = source === 'daemon' || source === 'chain';
-    if (virus.immune === 'click' && isClick) return 'IMMUNE';
+    if (virus.immune === 'hack' && isClick) return 'IMMUNE';
     if (virus.immune === 'daemon' && isDaemon) return 'IMMUNE';
     if (virus.encryptedBy !== 0 && isDaemon) return 'ENCRYPTED';
     return undefined;

@@ -5,7 +5,7 @@ const MANUAL_OVERRIDE = 3;
 
 /**
  * The scan daemon: a square zone that auto-damages everything inside it on a
- * tick. Moved by the player (arrows/WASD/right-click) or by Heuristic Scan.
+ * tick. Sent to the cursor by the player ([E] / right-click) or moved by Heuristic Scan.
  */
 export class DaemonSystem {
   x = 0;

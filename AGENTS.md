@@ -5,7 +5,7 @@
 
 ## 1. Pitch & pillars
 
-An incremental clicker in the browser. You are a sysadmin defending a machine from viruses and malicious code. You **click** threats to hack them while an automated **scan daemon** sweeps a zone of the grid. Every wave earns credits for upgrades, a boss arrives every 5 levels, and a prestige reset ("Reinstall OS") lets you push further.
+An incremental, **keyboard-first** game in the browser. You are a sysadmin defending a machine from viruses and malicious code. You move a **cursor** and **hold Space** to hack threats while an automated **scan daemon** sweeps a zone of the grid. Every wave earns credits for upgrades, a boss arrives every 5 levels, and a prestige reset ("Reinstall OS") lets you push further.
 
 Non-negotiable pillars:
 
@@ -17,7 +17,8 @@ Non-negotiable pillars:
 
 ## 2. Decisions taken (owner-confirmed)
 
-- **Click + daemon split**: yes. Clicking is the manual verb, and the daemon zone is automation.
+- **Hack + daemon split**: yes. Hacking is the manual verb, and the daemon zone is automation.
+- **Keyboard-first, no mashing** (2026-11-20): spam-clicking caused finger/mouse strain. The manual attack is a **hold-to-hack cursor**: hits fire at a fixed `hackRate` while held, and pressing faster never helps. Never add a mechanic where input speed is a stat. The mouse stays optional and mirrors the keyboard (hover = cursor, hold = hack).
 - **Player HP stays** (called **Integrity**). Threats damage it every second and bosses slam it; at 0 the wave fails. It is visible, and it's what makes bosses dangerous.
 
 ## 3. Commands
@@ -27,7 +28,7 @@ Non-negotiable pillars:
 | `npm run dev` | Vite dev server |
 | `npm run build` | `tsc` typecheck + production build (`dist/`, ~65 KB JS) |
 | `npm run typecheck` / `npm run lint` | tsc / ESLint (`eslint.config.mjs`) |
-| `npm run sim -- --cps 4 --until 40 --hours 2` | **Headless balance sim**: a scripted bot plays the real game logic and prints per-level tries, wave time, HP left, credits and damage. Run it after any balance change. Output goes in `.sim/` (gitignored). |
+| `npm run sim -- --react 0.5 --until 40 --hours 2` | **Headless balance sim**: a scripted bot plays the real game logic and prints per-level tries, wave time, HP left, credits and damage. Run it after any balance change. Output goes in `.sim/` (gitignored). |
 
 ## 4. Architecture
 
@@ -54,6 +55,7 @@ src/
     VirusBehaviorSystem.ts per-second attacks + traits (hop/heal/spread/encrypt/drain/trojan fuse)
     BossSystem.ts          boss attacks/slams + gimmicks (rootkit/botnet/polymorph/zeroday)
     DaemonSystem.ts        zone position, tick damage, Heuristic auto-targeting
+    HackSystem.ts          cursor, hold-to-hack rate limiting, focus ramp, Tab cycling, Target Lock priority
     AbilitySystem.ts       cooldowns + effects
     PickupSystem.ts        click-only data packets
     AchievementSystem.ts   periodic checks
@@ -79,7 +81,9 @@ scripts/sim.ts             headless balance bot (bundled with rolldown, run with
 
 **Loop:** Intermission (shop, level select, tutorial/boss/new-threat briefing) → **Deploy** → wave → cleared (bonus credits, next level unlocked) or breached (integrity 0 → retry, credits kept). Optional auto-deploy. Players can replay any unlocked level to farm. Reloading always lands in the intermission screen. Only persistent progress is saved, never mid-wave state.
 
-**Controls:** left-click to hack a cell or collect a packet · right-click / shift-click (touch: tap an empty cell) to center the daemon · arrows/WASD to nudge the daemon · `1–5` abilities · `Enter` deploy · `P`/`Esc` pause · `M` mute. The game auto-pauses when the tab is hidden.
+**Controls (keyboard-first):** arrows/WASD move the cursor · `Tab`/`Shift+Tab` jump to next/previous threat · **hold `Space`** to hack at `hackRate` (auto-repeat ignored) · `E` sends the daemon to the cursor · `1–5` abilities · `Enter` deploy · `P`/`Esc` pause · `M` mute. Mouse: hover moves the cursor, holding the button hacks, right-click / shift-click sends the daemon. Touch: press-and-hold hacks, tapping an empty cell sends the daemon. Holding is released on window blur, tab hide and pause. The game auto-pauses when the tab is hidden.
+
+**Hacking** (`system/HackSystem.ts`): hits fire every `1/hackRate` s while held, and one hit is banked while idle, so a fresh press is instant but mashing never beats the rate. **Focus**: staying on one target ramps damage from ×1 to `focusCap` over 1.5s, then resets on target change or kill. **Target Lock** (upgrade) auto-moves the cursor to `bestTarget()` after a kill. Upgrades: Keyboard Macro (rate), Deep Inspection (focus cap), Target Lock.
 
 **Threats** (first level in parentheses): Bug (1) · Byte Bug, hops (2) · Syntax Error, flat armor (3) · Null Pointer, explodes 30% max HP into neighbors (4) · Patch Bot, heals neighbors (6) · Worm, replicates (7) · Fork Bomb, splits (8) · Trojan, disguised as a packet: click it before its 5s fuse for double credits (9) · Obfuscator, neighbors take −60% damage (11) · Vampire Bug, drains credits and refunds 150% on kill (12) · Ransomware, encrypts neighbors so they're immune to the daemon but clickable (13). Children and copies are generation 1 and lose their trait.
 
@@ -89,11 +93,11 @@ scripts/sim.ts             headless balance bot (bundled with rolldown, run with
 
 **Prestige:** "Reinstall OS" from 10 cleared levels. Keys = `floor(3 · 1.18^(cleared−10))`, each +5% damage & credits. It resets credits, levels and upgrades, and keeps keys, achievements, stats and settings.
 
-**Balance snapshot** (sim, 4 clicks/s): L10 at about 7 min, L20 at about 17 min, L30 at about 30 min, and a first wall around L35 (prestige about 50 min, +~160 keys). Later prestiges reach L55 and then L80. Bosses are the main difficulty spikes, the Botnet (L10/L30) hardest.
+**Balance snapshot** (sim, hold-to-hack, 0.3–1.0s reaction): L10 at about 5 min, L20 at about 11 min, L30 at about 15 min, and a first wall around L35–40 (prestige about 50–60 min, +~300 keys). Bosses are the main difficulty spikes, the Botnet (L10/L30) hardest.
 
 ## 6. Save format
 
-`localStorage['antivirus-clicker-save']` = `PlayerState.toSave()` (`v: 2`). `fromSave()` validates every field, and migrates v1 (pre-overhaul) saves by keeping credits + level. Bump `SAVE_VERSION` and add a migration branch for breaking changes. Export/import uses base64(URI-encoded JSON).
+`localStorage['antivirus-clicker-save']` = `PlayerState.toSave()` (`v: 3`). `fromSave()` validates every field. It migrates v2 by renaming `stats.clicks` → `hacks` and achievement `clicks-1000` → `hacks-1000`, and v1 (pre-overhaul) saves by keeping credits + level. Bump `SAVE_VERSION` and add a migration branch for breaking changes. Export/import uses base64(URI-encoded JSON).
 
 ## 7. Known gaps / next steps
 
@@ -102,7 +106,7 @@ scripts/sim.ts             headless balance bot (bundled with rolldown, run with
 - [ ] Offline progress (undecided).
 - [ ] Rebindable keys; gamepad (not planned).
 - [ ] Touch: daemon moves by tapping empty cells only. Consider a drag gesture.
-- [ ] Accessibility: the grid is mouse/touch-only for clicking. Keyboard players can only steer the daemon and use abilities.
+- [x] Accessibility: the game is fully playable with the keyboard alone (hold-to-hack cursor).
 - [ ] Unit tests: none yet. `npm run sim` is the current smoke test (it exercises every system, all bosses and prestige).
 - [ ] Achievements are checked by polling every 0.5s; fine at this size.
 

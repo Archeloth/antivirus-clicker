@@ -7,7 +7,7 @@ import { F } from '../data/upgrades';
 
 export interface Stats {
   kills: number;
-  clicks: number;
+  hacks: number;
   crits: number;
   packets: number;
   creditsEarned: number;
@@ -27,7 +27,7 @@ export interface Settings {
   buyMax: boolean;
 }
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface SaveData {
   v: typeof SAVE_VERSION;
@@ -46,7 +46,7 @@ export interface SaveData {
 
 const DEFAULT_STATS: Stats = {
   kills: 0,
-  clicks: 0,
+  hacks: 0,
   crits: 0,
   packets: 0,
   creditsEarned: 0,
@@ -103,8 +103,22 @@ export class PlayerState {
     return F.rootMult(this.lvl('root')) * this.keyMult * (this.overdrive > 0 ? 2 : 1);
   }
 
-  get clickDamage(): number {
-    return F.clickBase(this.lvl('kb')) * F.macroMult(this.lvl('macro')) * this.damageMult;
+  get hackDamage(): number {
+    return F.hackBase(this.lvl('kb')) * F.macroMult(this.lvl('macro')) * this.damageMult;
+  }
+
+  /** Hits per second while holding hack. */
+  get hackRate(): number {
+    return F.hackRate(this.lvl('macro-keys'));
+  }
+
+  /** Maximum focus multiplier from staying on one target. */
+  get focusCap(): number {
+    return F.focusCap(this.lvl('inspection'));
+  }
+
+  get hasTargetLock(): boolean {
+    return this.lvl('target-lock') > 0;
   }
 
   get critChance(): number {
@@ -230,8 +244,9 @@ export class PlayerState {
       return true;
     }
 
-    if (data.v !== SAVE_VERSION) return false;
+    if (data.v !== SAVE_VERSION && data.v !== 2) return false;
     const save = data as Partial<SaveData>;
+    if (data.v === 2) migrateV2(save);
     this.reset();
     this.credits = num(save.credits, 0);
     this.highestLevel = Math.max(1, Math.floor(num(save.highestLevel, 1)));
@@ -262,6 +277,18 @@ export class PlayerState {
     this.settings = { ...DEFAULT_SETTINGS };
     this.clearBuffs();
     this.restoreHp();
+  }
+}
+
+/** v2 → v3: clicking became hacking (keyboard-first controls). */
+function migrateV2(save: Partial<SaveData>): void {
+  const stats = save.stats as unknown as Record<string, unknown> | undefined;
+  if (stats && typeof stats.clicks === 'number') {
+    stats.hacks = stats.clicks;
+    delete stats.clicks;
+  }
+  if (save.achievements) {
+    save.achievements = save.achievements.map((id) => (id === 'clicks-1000' ? 'hacks-1000' : id));
   }
 }
 

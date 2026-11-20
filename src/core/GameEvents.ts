@@ -1,7 +1,7 @@
 import type { Cell } from './Cell';
 import type { Virus } from '../entities/Virus';
 
-export type DamageSource = 'click' | 'daemon' | 'chain' | 'ability' | 'explosion' | 'purge';
+export type DamageSource = 'hack' | 'daemon' | 'chain' | 'ability' | 'explosion' | 'purge';
 export type LogKind = 'info' | 'warn' | 'alert' | 'good' | 'system';
 
 /**

@@ -68,7 +68,7 @@ export class AbilitySystem {
         break;
       case 'logic-bomb': {
         const c = daemon.center();
-        const damage = player.clickDamage * LOGIC_BOMB_MULT;
+        const damage = player.hackDamage * LOGIC_BOMB_MULT;
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             const cell = grid.get(c.x + dx, c.y + dy);

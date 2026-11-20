@@ -5,7 +5,11 @@ import { fmt, fmtPct } from '../utils/format';
  * these, and the shop uses them to preview "now → next", so the two never drift.
  */
 export const F = {
-  clickBase: (l: number) => 5 + 3 * l,
+  hackBase: (l: number) => 5 + 3 * l,
+  /** Hits per second while hack is held. */
+  hackRate: (l: number) => 3 + 0.25 * l,
+  /** Max focus multiplier (reached after FOCUS_RAMP seconds on one target). */
+  focusCap: (l: number) => 1.75 + 0.25 * l,
   macroMult: (l: number) => Math.pow(1.25, l),
   critChance: (l: number) => 0.03 * l,
   packetBonus: (l: number) => 1 + 0.25 * l,
@@ -21,7 +25,7 @@ export const F = {
   rootMult: (l: number) => Math.pow(1.25, l),
 };
 
-export type UpgradeCategory = 'click' | 'daemon' | 'system' | 'ability';
+export type UpgradeCategory = 'hack' | 'daemon' | 'system' | 'ability';
 
 export interface UpgradeDef {
   id: string;
@@ -40,20 +44,52 @@ export interface UpgradeDef {
 }
 
 export const UPGRADES: readonly UpgradeDef[] = [
-  // ── CLICK ────────────────────────────────────────────────
+  // ── HACK ─────────────────────────────────────────────────
   {
     id: 'kb',
     name: 'Mechanical Keyboard',
-    category: 'click',
-    description: '+3 base click damage. Clicky switches, clicky kills.',
+    category: 'hack',
+    description: '+3 base hack damage. Clicky switches, clicky kills.',
     baseCost: 10,
     costGrowth: 1.17,
-    effect: (l) => `${fmt(F.clickBase(l))} dmg`,
+    effect: (l) => `${fmt(F.hackBase(l))} dmg`,
+  },
+  {
+    id: 'target-lock',
+    name: 'Target Lock',
+    category: 'hack',
+    description: 'When your target dies, the cursor jumps to the next priority threat automatically.',
+    baseCost: 60,
+    costGrowth: 1,
+    max: 1,
+    requiresLevel: 2,
+  },
+  {
+    id: 'macro-keys',
+    name: 'Keyboard Macro',
+    category: 'hack',
+    description: '+0.25 hacks per second while holding [Space].',
+    baseCost: 40,
+    costGrowth: 1.6,
+    max: 12,
+    requires: [{ id: 'kb', level: 2 }],
+    effect: (l) => `${F.hackRate(l).toFixed(1)}/s`,
+  },
+  {
+    id: 'inspection',
+    name: 'Deep Inspection',
+    category: 'hack',
+    description: 'Raises the focus cap: staying on one target ramps damage higher.',
+    baseCost: 150,
+    costGrowth: 1.9,
+    max: 4,
+    requires: [{ id: 'kb', level: 6 }],
+    effect: (l) => `×${F.focusCap(l).toFixed(2)} focus`,
   },
   {
     id: 'sniffer',
     name: 'Packet Sniffer',
-    category: 'click',
+    category: 'hack',
     description: 'Data packets spawn more often and are worth more.',
     baseCost: 50,
     costGrowth: 1.5,
@@ -64,8 +100,8 @@ export const UPGRADES: readonly UpgradeDef[] = [
   {
     id: 'overflow',
     name: 'Buffer Overflow',
-    category: 'click',
-    description: '+3% chance for a click to crit for ×3 damage.',
+    category: 'hack',
+    description: '+3% chance for a hack to crit for ×3 damage.',
     baseCost: 60,
     costGrowth: 1.45,
     max: 15,
@@ -74,9 +110,9 @@ export const UPGRADES: readonly UpgradeDef[] = [
   },
   {
     id: 'macro',
-    name: 'Macro Scripts',
-    category: 'click',
-    description: '×1.25 click damage. Automate the boring parts.',
+    name: 'Exploit Kit',
+    category: 'hack',
+    description: '×1.25 hack damage. Off-the-shelf zero-days.',
     baseCost: 300,
     costGrowth: 2.6,
     requires: [{ id: 'kb', level: 10 }],
@@ -194,7 +230,7 @@ export const UPGRADES: readonly UpgradeDef[] = [
     id: 'logic-bomb',
     name: 'Logic Bomb',
     category: 'ability',
-    description: 'Unlock [2]: 10× click damage to the 3×3 around the daemon.',
+    description: 'Unlock [2]: 10× hack damage to the 3×3 around the daemon.',
     baseCost: 300,
     costGrowth: 1,
     max: 1,
@@ -239,7 +275,7 @@ export function upgradeCost(def: UpgradeDef, level: number): number {
 }
 
 export const CATEGORY_LABELS: Record<UpgradeCategory, string> = {
-  click: 'CLICK // manual hacking',
+  hack: 'HACK // manual exploits [Space]',
   daemon: 'DAEMON // automated scanning',
   system: 'SYSTEM // economy & integrity',
   ability: 'ABILITIES // one-time unlocks',
